@@ -1,7 +1,94 @@
-# Demo build output (native executables published by scripts/build_demos.sh)
+# Art assets (png, wav, gltf, glb, fbx, ktx2, obj models, scene documents) are
+# this repository's content and are deliberately NOT ignored. Everything below
+# is build output, run state, or tooling cruft.
+
+# --- Demo build output ---
+# Native executables published by scripts/build_demos.sh (POSIX: bin/<demo>,
+# Windows: bin/<Demo>/<Demo>.exe). Note: a POSIX native binary has no
+# extension, so only this sanctioned output path can be matched by pattern —
+# build demos with scripts/build_demos.sh rather than into a project root.
 /bin/
 
-# Probe/run artifacts demos drop next to their project directories
+# --- Compiler / toolchain artifacts ---
+*.il
+*.o
+*.obj
+# model.obj is a 3D model asset, not a compiler object file.
+!games/3dbaseball/model.obj
+*.s
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app/
+*.dSYM/
+*.pdb
+*.ilk
+*.exp
+*.gch
+*.pch
+
+# --- Packaging output ---
+# `zanna package` results: macOS zips/dmgs, Windows installers, tarballs.
+*.zip
+*.dmg
+*.tar
+*.tar.gz
+*.tgz
+*-setup.exe
+*.msi
+*.pkg
+
+# --- Demo run state ---
+# Save data, profiles, and logs written into a project root on interactive
+# runs. Scoped to project roots so authored assets/*.json stay trackable.
+*.save
+*.sav
 baseball_saves/
 frogger_highscores.txt
 games/ashfall/ashfall_menu_probe_save/
+games/*/checkpoint.json
+games/*/profile.json
+games/*/settings.json
+games/*/transaction_log.txt
+apps/*/checkpoint.json
+apps/*/profile.json
+apps/*/settings.json
+apps/*/transaction_log.txt
+
+# --- Zanna Studio per-project build/run outputs (Play launches, packaged runs) ---
+.zanna-studio/
+
+# --- Screenshots and captures from probes ---
+*-shot.png
+*-capture.png
+/shots/
+
+# --- Logs / temp / scratch ---
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.swp
+*.swo
+~*
+scratch/
+
+# --- Editors / IDEs ---
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+.clangd/
+.claude/
+.cache/
+.vs/
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
