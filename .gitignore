@@ -1,0 +1,7 @@
+# Demo build output (native executables published by scripts/build_demos.sh)
+/bin/
+
+# Probe/run artifacts demos drop next to their project directories
+baseball_saves/
+frogger_highscores.txt
+games/ashfall/ashfall_menu_probe_save/

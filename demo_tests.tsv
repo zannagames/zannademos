@@ -1,0 +1,125 @@
+# Demo test manifest consumed by scripts/run_demo_tests.sh / run_demo_tests.ps1.
+# TAB-separated columns: demo	action	target	lanes	timeout	env
+#   demo    directory relative to the repo root (`.` for repo-level scripts)
+#   action  check      -> zanna check <demo>/<target> --diagnostic-format=json
+#           run-probe  -> zanna run <target> with cwd = <demo>; passes only when
+#                         the process exits 0 AND prints "RESULT: ok"
+#           run-script -> execute <demo>/<target> with cwd = repo root and
+#                         ZANNA_BIN exported; passes on exit 0
+#   target  path relative to <demo> (`.` means the demo directory itself)
+#   lanes   comma set of: fast, full, perf, requires_display, native-arm64-macos
+#           default selection = fast+full; --fast selects fast only; perf rows
+#           run only with --perf; requires_display rows are skipped when
+#           ZANNA_DEMOS_HEADLESS=1; native-arm64-macos rows run only on
+#           macOS arm64 hosts. Rows whose lanes are exactly "quarantine" are
+#           never selected: they record known-broken demos pending repair.
+#   timeout seconds (0 = no timeout)
+#   env     comma-separated KEY=VALUE pairs applied to the child process, or -
+
+apps/webserver	check	.	fast	120	-
+apps/telnet	check	.	fast	120	-
+apps/varc	check	.	fast	120	-
+apps/asset_demo	check	.	fast	120	-
+# sqldb-basic predates newer BASIC type checking: `zanna check` reports 42
+# B2001 errors (operand/array-element type mismatches). Quarantined until the
+# dialect port lands; imported verbatim from the zanna repo.
+sqldb-basic	check	main.bas	quarantine	120	-
+
+games/3dscene	run-probe	smoke_probe.zia	fast	90	ZANNA_3D_BACKEND=software
+games/3dbaseball	run-probe	smoke_probe.zia	fast	90	ZANNA_3D_BACKEND=software
+games/baseball	run-probe	smoke_probe.zia	fast	30	-
+games/baseball	run-probe	lineup_legality_probe.zia	fast	30	-
+games/baseball	run-probe	staff_usage_probe.zia	fast	30	-
+games/baseball	run-probe	calendar_probe.zia	fast	30	-
+games/baseball	run-probe	reporting_probe.zia	fast	90	-
+games/baseball	run-probe	calibration_probe.zia	full	300	-
+games/baseball	run-probe	persistence_probe.zia	full	180	-
+games/baseball	run-probe	season_probe.zia	full	600	-
+games/centipede	check	.	fast	120	-
+games/fade-test	check	.	fast	120	-
+games/frogger	check	.	fast	120	-
+games/pacman-basic	check	.	fast	120	-
+# graphics-show predates the Zanna.Graphics color API rename: `zanna check`
+# reports 288 "Undefined identifier: RGB" errors. Quarantined until the API
+# port lands; imported verbatim from the zanna repo.
+games/graphics-show	check	.	quarantine	120	-
+
+apps/zannasql	run-probe	smoke_probe.zia	fast	240	-
+games/3dbowling	run-probe	smoke_probe.zia	fast	120	ZANNA_3D_BACKEND=software
+# Full release gate: 27 probes on the platform's default backend.
+games/3dbowling	run-script	run_probes.sh	full	1800	-
+games/3dbowling	run-probe	game3d/game3d_setup.zia	full	60	ZANNA_3D_BACKEND=software
+games/ridgebound	check	.	fast	120	-
+# Full release gate incl. tree material + forced-fallback probes. The smoke
+# probe asserts a measured frame budget: run on AC power (battery E-cores
+# cause false failures).
+games/ridgebound	run-script	run_probes.sh	full	1800	-
+.	run-script	scripts/native/test_3dbowling_native_build.sh	full,native-arm64-macos	180	-
+
+# --- Ashfall (code-built FPS campaign) ---
+games/ashfall	run-probe	probes/core_probe.zia	fast	120	-
+games/ashfall	run-probe	probes/smoke_probe.zia	fast	120	-
+games/ashfall	run-probe	probes/manifest_probe.zia	fast	120	-
+games/ashfall	run-probe	probes/meta_probe.zia	fast	120	-
+games/ashfall	run-probe	probes/movement_probe.zia	full,requires_display	120	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/perf_probe.zia	full,requires_display	120	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/stress_combat_probe.zia	full,requires_display	180	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/combat_probe.zia	full,requires_display	120	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/enemy_probe.zia	full,requires_display	180	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/level_probe.zia	full,requires_display	300	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/render_probe.zia	full,requires_display	120	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/campaign_probe.zia	full,requires_display	240	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/menu_probe.zia	full,requires_display	120	ZANNA_3D_BACKEND=software
+games/ashfall	run-probe	probes/assets_probe.zia	full,requires_display	240	ZANNA_3D_BACKEND=software
+# Native Metal PBR/post-FX visual gate (catches CPU/MSL constant-buffer drift).
+games/ashfall	run-probe	probes/visual_probe.zia	full,native-arm64-macos,requires_display	180	ZANNA_3D_BACKEND=metal,ZANNA_ASHFALL_EXPECT_BACKEND=metal
+games/ashfall/tools	run-probe	scene_parity_probe.zia	full	300	-
+
+# --- Ashfall: Scenes (scene-authored variant; default backend by design) ---
+games/ashfall-scenes	run-probe	probes/smoke_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/level_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/campaign_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/assets_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/combat_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/core_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/enemy_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/manifest_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/menu_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/meta_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/movement_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/render_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/stress_combat_probe.zia	full	300	-
+games/ashfall-scenes	run-probe	probes/visual_probe.zia	full	300	-
+# Frame/GPU budget probes: opt-in (battery-sensitive; run on AC power).
+games/ashfall-scenes	run-probe	probes/perf_probe.zia	perf	300	-
+games/ashfall-scenes	run-probe	probes/gpu_perf_probe.zia	perf	300	-
+
+# --- Xenoscape (action Metroidvania) ---
+games/xenoscape	run-probe	smoke_probe.zia	fast,requires_display	30	-
+games/xenoscape	run-probe	playthrough_probe.zia	fast	30	-
+games/xenoscape	run-probe	ui_flow_probe.zia	fast	30	-
+games/xenoscape	run-probe	cadence_probe.zia	fast	30	-
+games/xenoscape	run-probe	progression_probe.zia	fast	30	-
+games/xenoscape	run-probe	mechanics_probe.zia	fast	30	-
+games/xenoscape	run-probe	world_probe.zia	fast	30	-
+games/xenoscape	run-probe	meta_probe.zia	fast	30	-
+games/xenoscape	run-probe	settings_probe.zia	fast	30	-
+games/xenoscape	run-probe	package_probe.zia	fast	30	-
+games/xenoscape	run-probe	soak_probe.zia	fast	60	-
+games/xenoscape	run-probe	render_probe.zia	fast,requires_display	30	-
+games/xenoscape	run-probe	level_validation_probe.zia	full	180	-
+games/xenoscape	run-probe	campaign_probe.zia	full	180	-
+games/xenoscape	run-probe	performance_probe.zia	full	120	-
+games/xenoscape	run-probe	tools/scene_parity_probe.zia	full	300	-
+games/xenoscape	run-script	package_dry_run.sh	full	60	-
+
+# --- Xenoscape: Scenes (scene-authored variant) ---
+games/xenoscape-scenes	run-probe	smoke_probe.zia	fast,requires_display	30	-
+games/xenoscape-scenes	run-probe	package_probe.zia	fast	30	-
+games/xenoscape-scenes	run-probe	level_validation_probe.zia	full	180	-
+games/xenoscape-scenes	run-probe	playthrough_probe.zia	full	300	-
+
+# --- Native ARM64 codegen gates (macOS arm64 hosts only) ---
+.	run-script	scripts/native/test_xenoscape_native_start.sh	full,native-arm64-macos	180	-
+.	run-script	scripts/native/test_xenoscape_native_action_names.sh	full,native-arm64-macos	180	-
+.	run-script	scripts/native/test_xenoscape_native_gameplay.sh	full,native-arm64-macos	300	-

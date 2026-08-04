@@ -1,0 +1,15 @@
+# Zanna showcase demos built by scripts/build_demos.sh.
+# Format: executable-name|category|project-directory
+# Categories mirror the on-disk layout: games/, apps/.
+# Projects are resolved as <category>/<project-directory>/zanna.project.
+
+# Games
+3dbowling|games|3dbowling
+ashfall|games|ashfall
+ashfall-scenes|games|ashfall-scenes
+baseball|games|baseball
+ridgebound|games|ridgebound
+xenoscape|games|xenoscape
+
+# Applications
+zannasql|apps|zannasql
