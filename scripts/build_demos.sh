@@ -37,4 +37,11 @@ ZANNA_DEMO_ROOT=$ROOT
 ZANNA_DEMO_BIN_DIR=$ROOT/bin
 export ZANNA_DEMO_MANIFEST ZANNA_DEMO_ROOT ZANNA_DEMO_BIN_DIR
 
-exec sh "$PARENT_BUILDER" "$@"
+# Run the parent builder through its own interpreter rather than forcing `sh`.
+# It is a bash script, and where /bin/sh is a separate minimal shell rather than
+# bash in POSIX mode, `sh` cannot expand the `${BASH_SOURCE[0]}` it uses to find
+# its own directory: the builder then fails to locate the platform script.
+if [ -x "$PARENT_BUILDER" ]; then
+    exec "$PARENT_BUILDER" "$@"
+fi
+exec bash "$PARENT_BUILDER" "$@"
