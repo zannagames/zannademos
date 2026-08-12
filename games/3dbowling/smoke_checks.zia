@@ -1,3 +1,22 @@
+//===----------------------------------------------------------------------===//
+//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//
+//===----------------------------------------------------------------------===//
+//
+// File: games/3dbowling/smoke_checks.zia
+// Purpose: Provide shared image-quality and diagnostics checks for bowling probes.
+// Key invariants:
+//   - Scene checks reject diagnostic, missing, or hard-masked output.
+//   - Legitimate low-light edge detail remains valid across render backends.
+// Ownership/Lifetime:
+//   - Pixel buffers are borrowed for the duration of each check.
+//   - Diagnostics are owned by the process-wide Game3D diagnostics registry.
+// Links: smoke_probe.zia, aim_smoke_probe.zia, title_postfx_smoke.zia
+//
+//===----------------------------------------------------------------------===//
+
 module smoke_checks;
 
 bind Zanna.Game3D as Game3D;
@@ -94,7 +113,11 @@ func EdgeSampleReadable(img: Pixels, x: Integer, y: Integer) -> Bool {
     var g = Bits.And(px >> 16, 0xFF);
     var b = Bits.And(px >> 8, 0xFF);
     var lum = (r * 30 + g * 59 + b * 11) / 100;
-    return lum > 32;
+    // This is a hard-mask check, not a minimum scene-exposure check. Correct
+    // sRGB-linearized tonemapping leaves intentional shadow detail in the
+    // approach corners below the former 32-luma cutoff, while a clipped
+    // circular mask remains at or extremely near black.
+    return lum > 6;
 }
 
 /// @brief Guard against a hard circular vignette masking the playable frame.
