@@ -26,15 +26,6 @@ apps/asset_demo	check	.	fast	120	-
 sqldb-basic	check	main.bas	quarantine	120	-
 
 games/3dscene	run-probe	smoke_probe.zia	fast	90	ZANNA_3D_BACKEND=software
-games/3dbaseball	run-probe	smoke_probe.zia	fast	90	ZANNA_3D_BACKEND=software
-games/baseball	run-probe	smoke_probe.zia	fast	30	-
-games/baseball	run-probe	lineup_legality_probe.zia	fast	30	-
-games/baseball	run-probe	staff_usage_probe.zia	fast	30	-
-games/baseball	run-probe	calendar_probe.zia	fast	30	-
-games/baseball	run-probe	reporting_probe.zia	fast	90	-
-games/baseball	run-probe	calibration_probe.zia	full	300	-
-games/baseball	run-probe	persistence_probe.zia	full	180	-
-games/baseball	run-probe	season_probe.zia	full	600	-
 games/centipede	check	.	fast	120	-
 games/fade-test	check	.	fast	120	-
 games/frogger	check	.	fast	120	-

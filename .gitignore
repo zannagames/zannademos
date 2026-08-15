@@ -13,8 +13,6 @@
 *.il
 *.o
 *.obj
-# model.obj is a 3D model asset, not a compiler object file.
-!games/3dbaseball/model.obj
 *.s
 *.a
 *.lib
@@ -47,7 +45,6 @@
 # runs. Scoped to project roots so authored assets/*.json stay trackable.
 *.save
 *.sav
-baseball_saves/
 frogger_highscores.txt
 games/ashfall/ashfall_menu_probe_save/
 games/*/checkpoint.json
