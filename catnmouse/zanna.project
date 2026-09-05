@@ -1,5 +1,5 @@
 project catnmouse
-version 1.0.0
+version 1.1.4
 lang zia
 entry main.zia
 package-name "Cat 'n' Mouse"

@@ -35,7 +35,7 @@ expose func initials(s: String) -> String {
 expose func score(g: rules.Board) -> Integer {
     var cheese = g.room * 12 + g.collected;
     if g.state == rules.MAP || g.state == rules.WON { cheese = g.room * 12; }
-    var value = cheese * 100 + g.room * 1000 + g.captures * 250 - g.totalTurns * 2;
+    var value = cheese * 100 + g.room * 1000 + g.captures * 250 + g.bonuses * rules.BONUS_POINTS - g.totalTurns * 2;
     if g.state == rules.WON { value = value + 5000 + g.lives * 500; }
     if value < 0 { return 0; } return value;
 }

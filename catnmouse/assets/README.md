@@ -11,16 +11,19 @@ these PNG files here and restart to replace individual sprites:
 | `cheese.png` | Pickup |
 | `mouse.png` | Player |
 | `cat_sentry.png` | Amber stationary cat |
-| `cat_stalker.png` | Blue cat, moves every two turns |
-| `cat_prowler.png` | Violet cat, moves every turn |
-| `exit_closed.png` | Locked arch |
-| `exit_open.png` | Open arch |
+| `cat_stalker.png` | Blue wandering cat |
+| `cat_prowler.png` | Violet wandering cat, faster |
+| `exit_closed.png` | Locked arch (house-map icon) |
+| `exit_open.png` | Open arch, drawn once the exit appears |
+| `bonus.png` | Star bonus pickup |
+| `crate_new.png` | Pale crate dropped by a wandering cat |
 
 Use 64 by 64 RGBA PNGs; other sizes are scaled to 64 by 64 with nearest-neighbor
 sampling. Keep characters inside the tile and use transparent backgrounds.
 Floor and wall artwork should fill their tile. Alpha is composed by the native
-RenderTarget2D, including partially transparent edges. UI text, lane markers and
-the house-map diagram remain procedural so they always match the live rules.
+RenderTarget2D, including partially transparent edges. UI text, lane bands,
+sentry glow, the catch halo and the house-map diagram remain procedural so they
+always match the live rules.
 
 Search order: `CATNMOUSE_ASSETS` (when set, this is the only directory), `assets`
 beside the executable, `../Resources/assets` beside a macOS bundled executable,

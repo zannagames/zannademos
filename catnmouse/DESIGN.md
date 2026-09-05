@@ -25,50 +25,59 @@ a 60 FPS presentation loop; this is a design target, not a measured platform SLA
 ## Scope and decisions
 
 The original blocks paragraph was truncated, and movement, regeneration timing,
-respawn, and the exact capture rule were unspecified. This implementation uses:
+respawn, and the exact capture rule were unspecified. The 2026-09 rework moved
+the game from turn-based to real time and settled the following rules:
 
 - A 20 by 11 board (including its outer walls), 64 by 64 pixel cells, cardinal
-  single-cell movement, twelve cheese pieces per room,
-  ten authored rooms, and five lives shared across the Classic campaign.
-- Turn-based play: one fresh arrow/WASD/D-pad press or left-stick deflection
-  moves or pushes; Space or controller X waits.
-  Holding a key never spends extra turns. Invalid moves spend no turn.
-- Walls and crates stop all four cardinal sightlines. Other cats and cheese do
-  not stop sightlines. Cats cannot share the mouse's tile; contact has no special
-  damage rule. Only an unobstructed row or column causes a loss.
-- One crate can be pushed into empty floor; no chain pushing, pulling, undo,
-  crate destruction, or pushing onto cheese, cats, or the exit.
-- A mobile cat enclosed on four cardinal sides by walls/crates is removed
-  immediately, before exposure is checked. At least one side must be a crate.
-  Other cats do not count as enclosure. Stationary sentries cannot be captured.
-- Amber sentries stay put. On Classic/Fierce, blue stalkers move every second
-  turn; violet prowlers every turn. Cozy uses three/two turns respectively.
-  Mobile cats choose the empty neighbor with the shortest Manhattan
-  distance to the mouse, using a deterministic rotating tie order. They can
-  sidestep obstacles and never push crates. Cats may stand on cheese, in which
-  case a gold badge preserves pickup visibility. Their cadence is visible.
-- Exposure is checked after the mouse's push/move, and after each individual
-  cat move. Entering an exposed lane cannot be rescued by a cat moving away.
-  A life loss stops the rest of the turn. Surviving mice collect cheese after
-  the cat phase, then the relocation counter advances.
-- On Classic, remaining cheese relocates every 10 turns initially, then 8, then 6. The
-  countdown is visible. Placement samples empty floor without replacement,
-  excluding the mouse, cats, crates, walls, and exit. Collected cheese stays
-  collected. Cheese may be exposed or temporarily inaccessible; a later
-  relocation can rescue it. If the board is crowded, unplaced cheese remains
-  pending and is retried at the next relocation; it is never silently collected.
+  single-cell movement, twelve cheese pieces per room, ten authored rooms, and
+  five lives shared across the Classic campaign.
+- Real time: `Board.tick()` advances one 100 ms step, driven by the frame clock
+  in `main.zia` and explicitly by probes. Menus, pause, help and dialogs never
+  tick. The mouse moves only on `Board.step()`, one square per fresh key press;
+  Space still spends a "wait" turn for the statistics only.
+- Only the outer boundary is fixed. Every interior block is a pushable crate;
+  authored crates are brown, cat-dropped crates are pale (tile value 3) and
+  behave identically.
+- Grace: `GRACE` (15) ticks at room start, after a respawn/resume and after a
+  restart, during which no cat moves or hunts. Room authoring guarantees no cat
+  has a clear lane to the entrance; a respawned cat also gets a 15-tick hold.
+- Sightlines: crates and walls occlude; cheese, the bonus and cats do not.
+  Roaming cats always hunt (outside grace/hold). Sentries hunt only while
+  `searching`, toggled on random timers (idle 20..50 ticks, searching 15..30).
+- Catch walk: entering or being caught in a hunting cat's lane sets `CAUGHT`,
+  locks movement, and walks the killer one square every `CHASE` (3) ticks until
+  it is adjacent (or blocked by a cat/crate), then `lose()` fires and the killer
+  returns to where it spotted the mouse.
+- Roaming: stalkers step every 9 ticks and prowlers every 5 on Classic (11/8 Cozy,
+  8/4 Fierce) to a random legal neighbour, avoiding an immediate reversal when
+  another option exists. Every 14..24 steps a roamer drops a crate on the square it
+  just vacated unless that square holds cheese, the bonus, the exit or the mouse,
+  or the drop would leave any adjacent item or the mouse with no free neighbour.
+- Boxed roamers (four solid sides): captured (+250) once twelve cheese are
+  collected, otherwise they respawn to a random covered floor cell that has no
+  clear lane to the mouse. A roamer with no legal move for three consecutive
+  due moves also respawns. Sentries are never boxed, captured or required for
+  the exit; `liveCats()` counts roamers only, and every room's exit requires
+  twelve cheese plus zero surviving roamers (`mustClear` is now HUD-only).
+- Cheese scatters once per room and never moves. One star bonus per room hops to
+  a random eligible cell every `interval` seconds (the old scatter table) until
+  collected; it is worth `BONUS_POINTS` (300).
+- The exit is hidden (`ex = ey = -1`) until `exitOpen()`; it is then placed on a
+  random floor cell reachable from the mouse, preferring cells at least four
+  steps away, and pushes may no longer cover it.
+- Quick restart (Backspace / T / LB) costs one life and reloads the current room
+  with fresh randomness; on the last life it ends the run instead.
 - Seeded integer randomness makes a run reproducible. New campaigns get a fresh
-  seed; tests and `--seed N` can choose a repeatable seed.
-- After a death, Enter respawns at the safe empty square nearest the original
-  entrance. Crates, cats, collected cheese and turn counter persist. Cheese at
-  the refuge is collected on arrival. No safe refuge ends the campaign.
-  An explicit surrender confirmation also costs one life without resetting the
-  board. There is no room restart; a new campaign is offered only at game over
-  or victory.
-- Clear rooms contain only mobile cats, making "all cats" satisfiable. The exit
-  opens at twelve cheese and, when required, zero cats. Entering it after a
-  surviving turn advances to the linear house-map interstitial. Room ten leads
-  to a victory screen. Lives carry between rooms.
+  seed; tests and `--seed N` can choose a repeatable seed. VM and native traces
+  over interleaved steps and ticks must match.
+- After a death, Enter respawns the mouse on a random floor cell outside every
+  sentry lane with at least one free neighbour, then `respawn()`s every roaming
+  cat (random covered cell with no lane to the mouse, hold = GRACE); sentries
+  never move. Crates, collected cheese, the bonus and the turn counter persist.
+  Cheese at the refuge is collected on arrival. No refuge ends the campaign.
+- Held movement repeats: one immediate move, a 400 ms pause, then one move every
+  100 ms while the key, D-pad or stick direction stays held (`controls.Repeater`).
+  Repeat is only produced while the board is live, never in menus or dialogs.
 
 ## Implementation sequence
 
@@ -101,7 +110,9 @@ run. Controller stick engage/release thresholds are 0.55/0.25; the dominant axis
 wins and neutral is required between steps. PNG overrides
 are optional; see `assets/README.md` for exact names and resolution order.
 
-Messages: blocked input: `Blocked. No turn spent.`; missing optional PNG: silent
+Messages: blocked input: `Blocked. No turn spent.`; spotted: `Spotted! The cat is
+coming.`; escape: `The cat found another way in.`; bonus: `Bonus! Extra points.`;
+exit: `The exit has appeared. Head for the green arch.`; missing optional PNG: silent
 procedural fallback; corrupt PNG: `Ignoring unreadable PNG: <path>`; invalid
 arguments: `Usage: catnmouse [--seed N] [--smoke | --window-smoke] [--screenshot PATH] [--screen board|menu|settings|scores]`; failed
 screenshot: `Could not save screenshot.`; no refuge: `No safe refuge remains.`;
@@ -112,37 +123,45 @@ write failure: `Could not save profile. Changes remain in this session.`
 
 ## Acceptance tests (Given / When / Then)
 
-- Given a distant cat in the same row/column, when no wall/crate intervenes,
-  then the square is lethal; a diagonal is safe and a single blocker stops it.
-- Given a crate, when pushed toward cheese/wall/crate/cat/exit, then neither
-  it nor the mouse moves and no turn is spent.
-- Given three enclosed sides, when the fourth closes with a crate, then a
-  mobile cat disappears; a sentry and enclosure by other cats survive.
-- Given an exposed destination, when its cat would move away this turn, then
-  the mouse still loses a life before the cat phase.
-- Given mobile cats, when a turn is spent, then their documented cadence,
-  collision rules and intermediate exposure checks apply.
-- Given collected cheese, when relocation occurs, then collected totals persist
-  and all active pickups occupy distinct eligible squares.
-- Given a crowded board, when relocation runs, then it terminates and preserves
-  the outstanding total through pending pickups.
-- Given a death, when Enter continues, then the room remains changed and the
-  respawn is safe; zero lives or zero refuge squares end the campaign.
-- Given each authored room, when loaded, then boundaries, one safe mouse/exit,
-  twelve pickups and compatible capture objectives validate.
-- Given an open exit, when the mouse enters, then a map transition occurs;
-  after room ten, victory occurs. Locked exits do not complete rooms.
-- Given two equal seeds/actions, when simulated, then state and pickups agree
-  in both VM and native executions.
+- Given a distant cat in the same row/column, when no crate intervenes, then the
+  square is exposed; a diagonal is safe and a single crate (authored or dropped)
+  stops it. During grace, or for an idle sentry, an exposed square is not lethal.
+- Given a crate, when pushed toward cheese/bonus/wall/crate/cat/shown exit, then
+  neither it nor the mouse moves and no turn is spent; a hidden exit never blocks.
+- Given a roamer enclosed on four sides before twelve cheese, then it respawns
+  covered, off the mouse's lanes, holding for GRACE ticks; after twelve cheese the
+  final enclosing push captures it. Sentries and cat-only enclosures never count.
+- Given the mouse enters a hunting lane, then the state becomes CAUGHT, movement
+  is refused, the killer walks one square per CHASE ticks, death follows on
+  arrival, and the killer returns to its spotting square.
+- Given a stalker, when its cadence elapses, then it moves to a legal neighbour,
+  records its previous cell, and drops a crate on the vacated cell after its
+  move counter reaches zero; drops never cover cheese nor seal a cheese cell.
+- Given a roamer with no legal move, then it respawns after three due moves.
+- Given collected cheese, when hundreds of ticks elapse, then no cheese moves;
+  the bonus hops on its countdown, disappears on pickup and never returns.
+- Given a crowded board, when scatter runs, then it terminates and preserves the
+  outstanding total through pending pickups.
+- Given a death, when Enter continues, then the room remains changed, the
+  respawn is covered and grace restarts; zero lives or zero refuge squares end
+  the campaign. Restart costs a life, rebuilds the room and re-rolls placement.
+- Given each authored room, when loaded, then boundaries, no interior walls, a
+  covered entrance with grace, twelve pickups, one bonus, a hidden exit and
+  compatible capture objectives validate, and nothing moves during grace.
+- Given the objective is met, when the exit is revealed, then it lies on a floor
+  cell reachable from the mouse; entering it advances to the map; after room
+  ten, victory occurs.
+- Given two equal seeds/actions/ticks, when simulated, then state, pickups and
+  cat positions agree in both VM and native executions.
 - Given absent/corrupt/transparent PNGs, when art loads, then fallback and alpha
-  composition work; screenshot generation requires no window or audio device.
-- Given an active run, when menus/settings are used, then no turns advance and
+  composition work; crates carry a translucent shadow and halos are bounded.
+- Given an active run, when menus/settings are used, then no ticks advance and
   changing next-run difficulty does not change current rules.
 - Given an ending, when it is processed multiple times, then only one score is
   recorded; each difficulty retains its best ten entries in stable score order.
 - Given saved preferences and scores, when loaded into a fresh profile, then
   they round-trip; corrupt JSON is nonfatal and invalid score records are rejected.
-- Given a held or drifting stick, when frames advance, then no repeated turns
+- Given a held or drifting stick, when frames advance, then no repeated moves
   occur until it returns to neutral; arrow/WASD and any-controller button bindings
   map to the same session commands.
 - Given the macOS package, when remounted read-only, then its ad-hoc bundle

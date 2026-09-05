@@ -32,12 +32,17 @@ func save(v: view.View, name: String) {
     if dir != "" { require(v.pixels.SavePng(Path.Join(dir, name + ".png")) == 1, "PNG export"); }
 }
 func start() {
-    for id in 0..10 {
+    for id in 0..art.COUNT {
         var sprite = art.generate(id);
         require(sprite.Width == 64 && sprite.Height == 64, "requested sprite dimensions");
         if id >= 2 { require(sprite.GetRgba(0, 0) == 0, "transparent sprite corners"); }
         require(sprite.GetRgba(32, 38) != 0, "sprite interior is drawn");
     }
+    var crate = art.generate(2);
+    var shade = crate.GetRgba(60, 60) % 256;
+    require(shade > 0 && shade < 255, "crate carries a translucent drop shadow");
+    var glow = art.halo(art.GOLD);
+    require(glow.Width == 96 && glow.GetRgba(48, 48) % 256 > 0 && glow.GetRgba(2, 2) % 256 == 0, "halo is soft and bounded");
     var target = RenderTarget2D.New(4, 4);
     var pixels = target.Pixels as Pixels;
     pixels.FillColor(0x0000FF);
@@ -54,6 +59,11 @@ func start() {
     }
     rooms.load(g, 0);
     for mode in 3..6 { v.draw(g, mode, true, false); save(v, "screen-" + Fmt.Int(mode)); }
+    v.draw(g, 9, true, false); save(v, "restart");
+    g.grace = 0; g.cats.get(0).searching = true; v.draw(g, 0, true, false); save(v, "searching");
+    g.collected = 12; g.cheese.clear(); g.revealExit(); v.draw(g, 0, true, false); save(v, "exit-shown");
+    g.state = rules.CAUGHT; g.killer = 0; v.draw(g, 0, true, false); save(v, "caught");
+    g.state = rules.PLAY; g.killer = -1;
     var prefs = new profile.Profile("catnmouse-preview");
     var flow = new session.Session(173, prefs, false);
     var front = new menus.Menus(v);

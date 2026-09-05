@@ -3,9 +3,10 @@
 // See LICENSE for license information.
 //===----------------------------------------------------------------------===//
 // File: zannademos/catnmouse/rules_probe.zia
-// Purpose: Exercise tactical rules and campaign invariants without a window.
+// Purpose: Exercise real-time tactical rules and campaign invariants without a window.
 // Key invariants:
 //   - Failures exit nonzero; identical seeds give identical outcomes.
+//   - Ticks are driven explicitly so every scenario is deterministic.
 // Ownership/Lifetime:
 //   - Each scenario owns its game state for the duration of the probe.
 // Links: rules.zia, rooms.zia, DESIGN.md
@@ -19,103 +20,211 @@ bind "./rooms";
 func require(ok: Boolean, message: String) {
     if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
 }
+func ticks(g: rules.Board, n: Integer) { for _ in 0..n { g.tick(); } }
+func fresh() -> rules.Board { var g = new rules.Board(); g.grace = 0; return g; }
 
 func start() {
-    var g = new rules.Board();
+    var g = fresh();
     require(rules.W == 20 && rules.H == 11, "requested board dimensions");
-    g.addCat(9, 2, 0);
-    require(g.danger(1, 2) && g.danger(9, rules.H - 2), "distant cardinal exposure");
-    require(!g.danger(2, 3), "diagonal is safe");
+    g.addCat(9, 2, 1);
+    require(g.exposed(1, 2) && g.exposed(9, rules.H - 2), "distant cardinal exposure");
+    require(g.lethal(1, 2) && !g.lethal(2, 3), "roamer lanes are lethal; diagonal is safe");
     g.setTile(5, 2, 2);
-    require(!g.danger(1, 2), "crate blocks sight");
-    g.setTile(5, 2, 1);
-    require(!g.danger(1, 2), "wall blocks sight");
-    g.clearRoom();
-    g.mx = 2; g.my = 2; g.setTile(3, 2, 2);
+    require(!g.exposed(1, 2), "crate blocks sight");
+    g.setTile(5, 2, 3);
+    require(!g.exposed(1, 2), "dropped crate blocks sight");
+    g.setTile(5, 2, 0); g.grace = 3;
+    require(g.exposed(1, 2) && !g.lethal(1, 2), "grace disables kills");
+    g.grace = 0;
+
+    // Sentries only hunt while searching.
+    g = fresh(); g.addCat(9, 2, 0);
+    require(g.exposed(1, 2) && !g.lethal(1, 2), "idle sentry is harmless");
+    g.cats.get(0).searching = true;
+    require(g.lethal(1, 2), "searching sentry is lethal");
+    g.mx = 1; g.my = 2; g.cats.get(0).searching = false; g.cats.get(0).searchTimer = 1;
+    g.tick();
+    require(g.cats.get(0).searching && g.state == rules.CAUGHT && g.killer == 0, "sentry starts searching into a catch");
+
+    // Pushing.
+    g = fresh(); g.mx = 2; g.my = 2; g.setTile(3, 2, 2);
     require(g.step(1, 0) && g.mx == 3 && g.tile(4, 2) == 2, "push one crate");
     g.setTile(5, 2, 2);
     require(!g.step(1, 0) && g.turn == 1, "no chain push or wasted turn");
     g.setTile(5, 2, 0); g.cheese.add(5 + 2 * rules.W);
     require(!g.step(1, 0), "cannot push onto cheese");
-    g.cheese.clear(); g.ex = 5; g.ey = 2;
+    g.cheese.clear(); g.bonus = 5 + 2 * rules.W;
+    require(!g.step(1, 0), "cannot push onto the bonus");
+    g.bonus = -1; g.ex = 5; g.ey = 2; g.exitShown = true;
     require(!g.step(1, 0), "cannot block exit");
-    g.ex = rules.W - 2; g.ey = rules.H - 2; g.addCat(5, 2, 1);
+    g.exitShown = false;
+    require(g.step(1, 0) && g.tile(5, 2) == 2, "hidden exit does not block pushes");
+    g.addCat(6, 2, 1);
     require(!g.step(1, 0), "cannot push into cat");
     require(!g.step(1, 1) && !g.step(2, 0), "reject noncardinal moves");
 
-    g.clearRoom(); g.mx = 3; g.my = 5;
-    g.addCat(6, 5, 1);
-    g.setTile(6, 4, 1); g.setTile(6, 6, 1); g.setTile(7, 5, 1);
-    g.setTile(4, 5, 2);
-    require(g.step(1, 0) && g.liveCats() == 0 && g.state == rules.PLAY,
-            "final enclosing push captures before exposure");
-    g.clearRoom(); g.addCat(6, 5, 0);
-    g.setTile(6, 4, 1); g.setTile(6, 6, 1); g.setTile(7, 5, 1); g.setTile(5, 5, 2);
-    g.capture(); require(g.liveCats() == 1, "sentries are indestructible");
-    g.clearRoom(); g.addCat(6, 5, 1);
-    g.setTile(6, 4, 1); g.setTile(6, 6, 1); g.setTile(7, 5, 1); g.addCat(5, 5, 0);
+    // Boxing: escape before the cheese is done, capture afterwards; sentries never.
+    g = fresh(); g.mx = 3; g.my = 5; g.addCat(6, 5, 1);
+    g.setTile(6, 4, 2); g.setTile(6, 6, 2); g.setTile(7, 5, 2); g.setTile(4, 5, 2);
+    require(g.step(1, 0) && g.liveCats() == 1 && g.cats.get(0).hold == rules.GRACE, "boxed cat escapes before twelve cheese");
+    var c = g.cats.get(0);
+    require(!(c.x == 6 && c.y == 5) && !g.clear(c.x, c.y, g.mx, g.my), "escaped cat respawns off the mouse's lanes");
+    require(g.event == 12, "escape event");
+    g = fresh(); g.mx = 3; g.my = 5; g.addCat(6, 5, 1); g.collected = 12;
+    g.setTile(6, 4, 2); g.setTile(6, 6, 2); g.setTile(7, 5, 2); g.setTile(4, 5, 2);
+    require(g.step(1, 0) && g.liveCats() == 0 && g.captures == 1 && g.state == rules.PLAY, "final enclosing push captures");
+    g = fresh(); g.addCat(6, 5, 0); g.collected = 12;
+    g.setTile(6, 4, 2); g.setTile(6, 6, 2); g.setTile(7, 5, 2); g.setTile(5, 5, 2);
+    g.capture(); require(g.cats.get(0).alive && g.liveCats() == 0, "sentries are indestructible and never block the exit");
+    g = fresh(); g.addCat(6, 5, 1); g.collected = 12;
+    g.setTile(6, 4, 2); g.setTile(6, 6, 2); g.setTile(7, 5, 2); g.addCat(5, 5, 1);
     g.capture(); require(g.liveCats() == 2, "another cat is not enclosure");
 
-    g.clearRoom(); g.mx = 2; g.my = 3; g.addCat(9, 2, 2);
-    g.step(0, -1);
-    require(g.state == rules.DEAD && g.lives == 4 && g.cats.get(0).x == 9,
-            "exposure before enemy movement, one life only");
-    g.setTile(4, 6, 2); g.collected = 3;
+    // Catch walk: the killer advances one square per CHASE ticks, then death.
+    g = fresh(); g.mx = 2; g.my = 3; g.addCat(9, 3, 2);
+    g.step(0, -1); g.step(0, 1);
+    require(g.state == rules.CAUGHT && g.killer == 0 && g.lives == 5, "entering a lane starts the catch walk");
+    require(!g.step(1, 0), "no movement during the catch walk");
+    ticks(g, rules.CHASE);
+    require(g.cats.get(0).x == 8 && g.state == rules.CAUGHT, "killer walks one square");
+    ticks(g, rules.CHASE * 5);
+    require(g.cats.get(0).x == 3, "killer reaches the mouse");
+    ticks(g, rules.CHASE);
+    require(g.state == rules.DEAD && g.lives == 4 && g.cats.get(0).x == 9 && g.killer < 0, "death after the walk restores the killer");
+    g.setTile(4, 6, 2); g.collected = 3; g.addCat(15, 8, 0); g.cats.get(1).searching = true;
     g.resume();
-    require(g.state == rules.PLAY && !g.danger(g.mx, g.my) && g.tile(4, 6) == 2 &&
-            g.collected == 3 && g.turn == 1, "safe respawn preserves room");
-    g.clearRoom(); g.mx = 2; g.my = 2; g.addCat(9, 8, 1);
-    g.step(0, 0); require(g.cats.get(0).x == 9 && g.cats.get(0).y == 8, "stalker waits");
-    g.step(0, 0); require(g.cats.get(0).x != 9 || g.cats.get(0).y != 8, "stalker cadence");
-    g.clearRoom(); g.mx = 2; g.my = 2; g.addCat(3, 3, 2);
-    g.step(0, 0); require(g.state == rules.DEAD, "cat relocation creates lethal lane");
+    require(g.state == rules.PLAY && !g.lethal(g.mx, g.my) && g.tile(4, 6) == 2 &&
+            g.collected == 3 && g.turn == 2 && g.grace == rules.GRACE, "respawn preserves room and grants grace");
+    c = g.cats.get(0);
+    require(!(c.x == 9 && c.y == 3) && c.hold == rules.GRACE && !g.clear(c.x, c.y, g.mx, g.my), "roamers scatter after a death");
+    require(g.cats.get(1).x == 15 && g.cats.get(1).y == 8 && !g.clear(15, 8, g.mx, g.my), "sentries stay put and cannot see the new spot");
+    var spots: List[Integer] = [];
+    for _ in 0..6 {
+        g.lose(); g.lives = 5; g.resume(); spots.add(g.my * rules.W + g.mx);
+    }
+    var same = true; for k in 1..spots.length() { if spots.get(k) != spots.get(0) { same = false; } }
+    require(!same, "death respawn location is random");
 
-    g.clearRoom(); g.mx = 2; g.my = 2; g.cheese.add(3 + 2 * rules.W);
-    g.step(1, 0); require(g.collected == 1 && g.cheese.length() == 0, "collect cheese");
-    g.relocate(); require(g.cheese.length() == 11 && g.collected == 1, "relocate only outstanding cheese");
-    g.countdown = 1; g.step(0, 0);
-    require(g.countdown == g.interval && g.cheese.length() == 11, "relocation countdown");
+    // Roaming: cadence, random legal moves, crate drops on vacated cells only.
+    g = fresh(); g.mx = 2; g.my = 2; g.addCat(9, 8, 1); g.cats.get(0).movesLeft = 2;
+    ticks(g, g.cadence(1) - 1);
+    require(g.cats.get(0).x == 9 && g.cats.get(0).y == 8, "stalker waits for its cadence");
+    g.tick();
+    c = g.cats.get(0);
+    require((c.x != 9 || c.y != 8) && rules.abs(c.x - 9) + rules.abs(c.y - 8) == 1 && g.tile(c.x, c.y) == 0, "stalker roams one legal square");
+    require(c.px == 9 && c.py == 8 && c.movedTick == g.ticks, "previous cell recorded for animation");
+    var crates = 0;
+    for i in 0..g.tiles.length() { if g.tiles.get(i) == 3 { crates = crates + 1; } }
+    require(crates == 0, "no drop yet");
+    ticks(g, g.cadence(1));
+    crates = 0; var dropped = -1;
+    for i in 0..g.tiles.length() { if g.tiles.get(i) == 3 { crates = crates + 1; dropped = i; } }
+    require(crates == 1 && dropped == c.py * rules.W + c.px && g.lastDrop == dropped, "second move drops a crate on the vacated cell");
+    require(g.cats.get(0).movesLeft >= rules.DROP_MIN && g.cats.get(0).movesLeft < rules.DROP_MIN + rules.DROP_SPAN, "drop counter re-rolls");
+    for _ in 0..200 { g.tick(); if g.state != rules.PLAY { break; } }
+    for i in 0..g.cheese.length() { require(g.tile(g.cheese.get(i) % rules.W, g.cheese.get(i) / rules.W) == 0, "drops never cover cheese"); }
+    g = fresh(); g.mx = 2; g.my = 2; g.addCat(9, 8, 1); g.cats.get(0).movesLeft = 1;
+    g.cheese.add(8 + 9 * rules.W); g.setTile(8, 7, 2); g.setTile(7, 8, 2); g.setTile(9, 9, 2); g.setTile(7, 9, 2); g.setTile(8, 10 - 1, 2);
+    g.setTile(8, 9, 0); g.setTile(9, 7, 2); g.setTile(10, 8, 2);
+    // Only (9,8) -> forced path via (8,8): cheese at (8,9) has (8,8) as its only free neighbour.
+    ticks(g, g.cadence(1));
+    require(g.cats.get(0).x == 8 && g.cats.get(0).y == 8, "cat forced through the single opening");
+    ticks(g, g.cadence(1) * 3);
+    require(g.tile(8, 8) != 3 || g.tile(9, 8) == 0, "drop never seals cheese in");
+
+    // Stuck cats respawn; sealed pockets escape.
+    g = fresh(); g.mx = 2; g.my = 2; g.addCat(9, 8, 1);
+    g.setTile(8, 8, 2); g.setTile(10, 8, 2); g.setTile(9, 7, 2); g.setTile(9, 9, 2);
+    g.tick(); c = g.cats.get(0);
+    require(c.alive && !(c.x == 9 && c.y == 8) && c.hold == rules.GRACE, "sealed roamer escapes before twelve cheese");
+    require(!g.lethal(c.x, c.y + 1) || g.grace > 0 || c.hold > 0, "holding cat cannot kill");
+    g = fresh(); g.mx = 2; g.my = 2; g.addCat(9, 8, 1);
+    g.addCat(8, 8, 0); g.addCat(10, 8, 0); g.addCat(9, 7, 0); g.addCat(9, 9, 0);
+    ticks(g, g.cadence(1) * 3); c = g.cats.get(0);
+    require(!(c.x == 9 && c.y == 8), "cat blocked by cats respawns after three tries");
+
+    // Cheese stays put; bonus hops and stops after pickup.
+    g = fresh(); g.mx = 2; g.my = 2; g.cheese.add(3 + 2 * rules.W);
+    g.step(1, 0); require(g.collected == 1 && g.cheese.length() == 0 && g.event == 2, "collect cheese");
+    g.scatter(); require(g.cheese.length() == 11 && g.collected == 1, "scatter only outstanding cheese");
+    var before: List[Integer] = []; for i in 0..g.cheese.length() { before.add(g.cheese.get(i)); }
+    ticks(g, 400);
+    for i in 0..before.length() { require(g.cheese.get(i) == before.get(i), "cheese never teleports"); }
+    g = fresh(); g.interval = 2; g.placeBonus();
+    require(g.bonus >= 0 && g.countdown == 20, "bonus placed with countdown");
+    ticks(g, 20);
+    require(g.bonus >= 0 && g.countdown == 20 && g.event == 13, "bonus hops on the countdown");
+    g.mx = g.bonus % rules.W - 1; g.my = g.bonus / rules.W; if g.mx < 1 { g.mx = g.bonus % rules.W + 1; }
+    var sx = 1; if g.mx > g.bonus % rules.W { sx = -1; }
+    g.setTile(g.mx, g.my, 0);
+    require(g.step(sx, 0) && g.bonus < 0 && g.bonuses == 1 && g.event == 8, "bonus pickup");
+    ticks(g, 30); require(g.bonus < 0, "no bonus after pickup");
     var a = new rules.Board(); var b = new rules.Board();
-    a.seed = 173; b.seed = 173; a.relocate(); b.relocate();
+    a.seed = 173; b.seed = 173; a.scatter(); b.scatter();
     for i in 0..12 { require(a.cheese.get(i) == b.cheese.get(i), "seed repeatability"); }
-    g.clearRoom();
+    g = fresh();
     for y in 1..rules.H - 1 { for x in 1..rules.W - 1 { g.setTile(x, y, 2); } }
-    g.setTile(1, 1, 0); g.relocate();
+    g.setTile(1, 1, 0); g.scatter();
     require(g.cheese.length() == 0 && g.collected == 0, "crowded board bounded pending cheese");
-    g.setTile(2, 1, 0); g.relocate();
+    g.setTile(2, 1, 0); g.scatter();
     require(g.cheese.length() == 1, "pending cheese retries");
 
-    g.clearRoom(); g.mx = g.ex - 1; g.my = g.ey; g.collected = 11;
-    g.step(1, 0); require(g.state == rules.PLAY, "locked exit");
-    g.mx = g.ex - 1; g.collected = 12; g.mustClear = true; g.addCat(8, 5, 1);
-    g.step(1, 0); require(g.state == rules.PLAY, "clear objective gates exit");
-    g.cats.clear(); g.mx = g.ex - 1; g.step(1, 0);
+    // Exit: hidden until the objective, then reachable; rooms and victory.
+    g = fresh(); g.collected = 11; g.mx = 5; g.my = 5;
+    g.step(1, 0); require(!g.exitShown && g.ex < 0, "locked exit stays hidden");
+    g.collected = 12; g.addCat(8, 8, 1);
+    g.step(1, 0); require(!g.exitShown, "a surviving roamer keeps the exit hidden in every room");
+    g.addCat(9, 9, 0); g.tick(); require(!g.exitShown, "sentries never gate the exit either way");
+    g.cats.removeAt(0); g.tick(); require(g.exitShown, "last roamer boxed opens the exit with sentries alive");
+    g.cats.clear(); g.exitShown = false; g.ex = -1; g.ey = -1;
+    g.cats.clear(); g.step(1, 0);
+    require(g.exitShown && g.event == 9 && g.tile(g.ex, g.ey) == 0 && !(g.ex == g.mx && g.ey == g.my), "exit revealed on floor");
+    require(rules.abs(g.ex - g.mx) + rules.abs(g.ey - g.my) >= 4, "exit prefers distance");
+    g.mx = g.ex - 1; g.my = g.ey; g.setTile(g.mx, g.my, 0); g.step(1, 0);
     require(g.state == rules.MAP && g.room == 1, "room completion to map");
-    rooms.load(g, 9); g.cats.clear(); g.collected = 12; g.mx = g.ex - 1; g.my = g.ey;
-    g.setTile(g.mx, g.my, 0); g.step(1, 0);
+    rooms.load(g, 9); g.cats.clear(); g.collected = 12; g.grace = 0; g.tick();
+    require(g.exitShown, "tick reveals exit");
+    g.mx = g.ex - 1; g.my = g.ey; g.setTile(g.mx, g.my, 0); g.step(1, 0);
     require(g.state == rules.WON, "tenth room completes campaign");
-    g.clearRoom(); g.lives = 1; g.lose(); g.resume();
+    g = fresh(); g.lives = 1; g.lose(); g.resume();
     require(g.state == rules.OVER && g.lives == 0, "last life cannot resume");
-    g.clearRoom(); g.lives = 3;
+    g = fresh(); g.lives = 3;
     for y in 1..rules.H - 1 { for x in 1..rules.W - 1 { g.setTile(x, y, 1); } }
     g.lose(); g.resume(); require(g.state == rules.OVER, "no safe refuge terminates");
 
+    // Restart costs a life and re-rolls the room.
+    g = new rules.Board(); g.seed = 99; rooms.load(g, 2); g.collected = 4;
+    var first = g.cheese.get(0);
+    require(g.restart() && g.lives == 4, "restart costs a life");
+    rooms.load(g, 2);
+    require(g.collected == 0 && g.room == 2 && g.cheese.length() == 12 && g.grace == rules.GRACE, "restart rebuilds the room");
+    require(g.cheese.get(0) != first || g.cheese.get(1) != first, "restart re-rolls placements");
+    g.lives = 1; require(!g.restart() && g.state == rules.OVER, "restart on the last life ends the run");
+
     for room in 0..10 {
-        g.lives = 5; rooms.load(g, room);
+        g = new rules.Board(); g.seed = 7 + room; g.lives = 5; rooms.load(g, room);
         require(g.cheese.length() == 12 && g.collected == 0, "twelve cheese per room");
-        require(!g.danger(g.mx, g.my) && g.tile(g.mx, g.my) == 0, "safe room entrance");
-        require(g.tile(g.ex, g.ey) == 0 && g.liveCats() > 0, "room exit and cats");
+        require(g.bonus >= 0 && g.cheeseAt(g.bonus % rules.W, g.bonus / rules.W) < 0, "one bonus per room");
+        require(!g.exposed(g.mx, g.my) && g.tile(g.mx, g.my) == 0 && g.grace == rules.GRACE, "safe room entrance with grace");
+        require(!g.exitShown && (room == 0 || g.liveCats() > 0) && g.mustClear == (room >= 1), "exit hidden at room start; rooms 2+ need every roamer boxed");
         for x in 0..rules.W { require(g.tile(x, 0) == 1 && g.tile(x, rules.H - 1) == 1, "horizontal boundary"); }
         for y in 0..rules.H { require(g.tile(0, y) == 1 && g.tile(rules.W - 1, y) == 1, "vertical boundary"); }
+        for y in 1..rules.H - 1 { for x in 1..rules.W - 1 { require(g.tile(x, y) != 1, "no interior walls"); } }
         for i in 0..g.cats.length() {
-            var c = g.cats.get(i);
-            require(g.tile(c.x, c.y) == 0 && (!g.mustClear || c.kind != 0), "compatible cats");
+            c = g.cats.get(i);
+            require(g.tile(c.x, c.y) == 0, "cats on floor");
+            if room == 0 { require(c.kind == 0, "room one has only sentries"); }
         }
         for i in 0..g.cheese.length() {
             var pos = g.cheese.get(i); var x = pos % rules.W; var y = pos / rules.W;
-            require(g.tile(x, y) == 0 && g.catAt(x, y) < 0 && !(x == g.ex && y == g.ey), "eligible cheese");
+            require(g.tile(x, y) == 0 && g.catAt(x, y) < 0 && pos != g.bonus, "eligible cheese");
             for j in 0..i { require(g.cheese.get(j) != pos, "unique cheese"); }
         }
+        for _ in 0..rules.GRACE {
+            g.tick();
+            for i in 0..g.cats.length() { c = g.cats.get(i); require(c.x == c.homeX && c.y == c.homeY, "no cat moves during grace"); }
+        }
+        require(g.state == rules.PLAY, "room start survives the grace period");
     }
     Terminal.Say("RESULT: ok");
 }

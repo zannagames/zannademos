@@ -6,7 +6,8 @@
 // Purpose: Render gameplay and every campaign screen into a headless-safe target.
 // Key invariants:
 //   - The full board is visible; rendering never mutates simulation state.
-//   - Danger markers use the same sightline query as the lethal rule.
+//   - Danger lanes use the same lethal query as the catch rule.
+//   - Sprite interpolation is derived from board ticks plus a caller-supplied phase.
 // Ownership/Lifetime:
 //   - View owns its render target and cached sprite bank for the application.
 // Links: art.zia, rules.zia, rooms.zia, main.zia
@@ -24,16 +25,21 @@ final HEIGHT = 872;
 final BX = 32;
 final BY = 96;
 final FOOT = BY + rules.H * art.SIZE + 24;
+final SLIDE = 200;
+
+/// @brief Cadence in ticks rendered as seconds with one decimal.
+expose func seconds(ticks: Integer) -> String { return Fmt.Int(ticks / 10) + "." + Fmt.Int(ticks % 10) + "S"; }
 
 class View {
     expose RenderTarget2D target;
     expose Pixels pixels;
     expose art.Art bank;
+    expose Integer phase;
 
     expose func init() {
         target = RenderTarget2D.New(WIDTH, HEIGHT);
         pixels = target.Pixels as Pixels;
-        bank = new art.Art();
+        bank = new art.Art(); phase = 0;
     }
 
     hide func text(x: Integer, y: Integer, s: String, color: Integer) { pixels.DrawText(x, y, s, color); }
@@ -41,167 +47,286 @@ class View {
         pixels.DrawTextScaled(x, y, s, scale, color);
     }
     hide func sprite(id: Integer, x: Integer, y: Integer) { target.DrawPixels(x, y, bank.sprites.get(id)); }
-    hide func header(g: rules.Board) {
-        pixels.FillColor(art.PAPER);
-        pixels.DrawBox(0, 0, WIDTH, 8, art.INK);
-        self.big(32, 22, "CAT 'N' MOUSE", 3, art.INK);
-        self.text(34, 57, profile.difficultyName(g.difficulty) + " / SCORE " + Fmt.Int(profile.score(g)), 0x63756C);
-        self.text(34, 77, "AMBER FIXED / BLUE " + Fmt.Int(g.cadence(1)) + "T / VIOLET " + Fmt.Int(g.cadence(2)) + "T", 0x63756C);
-        var number = g.room + 1; if number > 10 { number = 10; }
-        self.text(432, 22, "ROOM " + Fmt.Int(number) + " / 10", 0x63756C);
-        self.big(432, 41, rooms.name(number - 1), 2, art.INK);
-        var contract = "12 CHEESE";
-        if g.mustClear { contract = "12 CHEESE + ALL CATS"; }
-        if g.exitOpen() { contract = "EXIT OPEN - FIND THE ARCH"; }
-        self.text(432, 72, contract, art.INK);
-        self.text(760, 22, "CHEESE", 0x63756C);
-        self.big(760, 40, Fmt.Int(g.collected) + "/12", 3, art.INK);
-        for i in 0..12 {
-            var color = 0xCEC7B5; if i < g.collected { color = 0xC58B37; }
-            pixels.DrawBox(760 + i * 12, 76, 9, 5, color);
-        }
-        self.text(940, 22, "LIVES", 0x63756C);
-        for i in 0..g.maxLives {
-            var color = 0xCEC7B5; if i < g.lives { color = art.INK; }
-            var x = 949 + i * 22;
-            pixels.DrawDisc(x - 4, 45, 4, color); pixels.DrawDisc(x + 4, 45, 4, color);
-            pixels.DrawEllipse(x, 52, 6, 7, color);
-        }
-        self.text(940, 73, "CATS LEFT: " + Fmt.Int(g.liveCats()), art.INK);
-        self.text(1130, 22, "NEXT SCATTER", 0x63756C);
-        var countdown = Fmt.Int(g.countdown) + " TURNS";
-        if g.collected == 12 { countdown = "SECURED"; }
-        self.big(1130, 42, countdown, 2, art.INK);
-        pixels.DrawBox(1130, 76, 178, 5, 0xCEC7B5);
-        if g.collected < 12 { pixels.DrawBox(1130, 76, 178 * g.countdown / g.interval, 5, 0xC58B37); }
+    hide func keycap(x: Integer, y: Integer, key: String, label: String) -> Integer {
+        var w = pixels.TextWidth(key) + 10;
+        pixels.DrawBox(x + 1, y - 4, w, 16, 0x0B1B1E);
+        pixels.DrawBox(x, y - 5, w, 16, 0x2E4A4D);
+        pixels.DrawLine(x, y - 5, x + w - 1, y - 5, 0x53706A);
+        self.text(x + 5, y - 1, key, art.PAPER);
+        self.text(x + w + 8, y - 1, label, art.MUTED);
+        return x + w + 8 + pixels.TextWidth(label) + 22;
+    }
+    hide func mouseIcon(x: Integer, y: Integer, color: Integer) {
+        pixels.DrawDisc(x - 5, y - 6, 4, color); pixels.DrawDisc(x + 5, y - 6, 4, color);
+        pixels.DrawEllipse(x, y + 1, 7, 7, color);
+    }
+    hide func wedge(x: Integer, y: Integer, color: Integer) {
+        pixels.DrawTriangle(x, y + 9, x + 12, y + 2, x + 12, y + 9, color);
+        pixels.DrawBox(x, y + 9, 12, 2, color);
     }
 
-    hide func board(g: rules.Board, lanes: Boolean) {
-        pixels.DrawBox(BX - 5, BY - 5, rules.W * art.SIZE + 10, rules.H * art.SIZE + 10, 0xC6BFA9);
-        for y in 0..rules.H {
-            for x in 0..rules.W {
-                var px = BX + x * art.SIZE; var py = BY + y * art.SIZE;
-                self.sprite(0, px, py);
-                var tile = g.tile(x, y);
-                if tile != 0 { self.sprite(tile, px, py); }
-                if tile == 0 && lanes && g.danger(x, y) {
-                    pixels.DrawFrame(px + 4, py + 4, art.SIZE - 8, art.SIZE - 8, 0x895D53);
-                    pixels.DrawDisc(px + art.SIZE / 2, py + art.SIZE / 2, 3, art.RED);
+    hide func header(g: rules.Board) {
+        pixels.DrawBox(0, 0, WIDTH, 92, art.NIGHT);
+        pixels.DrawBox(0, 88, WIDTH, 4, art.GOLD);
+        pixels.DrawBox(0, 0, WIDTH, 2, 0x2E4A4D);
+        self.big(32, 20, "CAT 'N' MOUSE", 3, art.PAPER);
+        self.text(34, 55, profile.difficultyName(g.difficulty) + "  /  SCORE " + Fmt.Int(profile.score(g)), art.GOLD);
+        self.text(34, 74, "STALKER " + seconds(g.cadence(1)) + " / PROWLER " + seconds(g.cadence(2)) + " PER STEP", art.MUTED);
+        var number = g.room + 1; if number > 10 { number = 10; }
+        pixels.DrawBox(408, 14, 4, 62, 0x2E4A4D);
+        self.text(432, 20, "ROOM " + Fmt.Int(number) + " OF 10", art.MUTED);
+        self.big(432, 38, rooms.name(number - 1), 2, art.PAPER);
+        var contract = "12 CHEESE";
+        if g.mustClear { contract = "12 CHEESE + BOX IN ALL ROAMING CATS"; }
+        if g.exitShown { contract = "EXIT OPEN - FIND THE ARCH"; }
+        else if g.collected == 12 { contract = "BOX IN THE LAST " + Fmt.Int(g.liveCats()) + " CATS TO OPEN THE EXIT"; }
+        else { contract = contract + "  /  EXIT HIDDEN"; }
+        self.text(432, 68, contract, art.GOLD);
+        pixels.DrawBox(736, 14, 4, 62, 0x2E4A4D);
+        self.text(760, 20, "CHEESE", art.MUTED);
+        self.big(760, 38, Fmt.Int(g.collected) + "/12", 3, art.PAPER);
+        for i in 0..12 {
+            var color = 0x2E4A4D; if i < g.collected { color = art.GOLD; }
+            self.wedge(760 + i * 14, 66, color);
+        }
+        pixels.DrawBox(916, 14, 4, 62, 0x2E4A4D);
+        self.text(940, 20, "LIVES", art.MUTED);
+        for i in 0..g.maxLives {
+            var color = 0x2E4A4D; if i < g.lives { color = art.PAPER; }
+            self.mouseIcon(949 + i * 22, 44, color);
+        }
+        var roaming = 0; var sentries = 0; var searching = 0;
+        for i in 0..g.cats.length() {
+            var c = g.cats.get(i);
+            if c.alive && c.kind != 0 { roaming = roaming + 1; }
+            if c.alive && c.kind == 0 { sentries = sentries + 1; if c.searching { searching = searching + 1; } }
+        }
+        var catLine = "ROAM " + Fmt.Int(roaming);
+        if sentries > 0 { catLine = catLine + " SENT " + Fmt.Int(sentries) + " HUNT " + Fmt.Int(searching); }
+        self.text(940, 70, catLine, art.PAPER);
+        pixels.DrawBox(1106, 14, 4, 62, 0x2E4A4D);
+        if g.bonus >= 0 {
+            self.text(1130, 20, "BONUS HOPS IN", art.MUTED);
+            self.big(1130, 38, seconds(g.countdown), 2, art.PAPER);
+            pixels.DrawBox(1130, 66, 178, 6, 0x2E4A4D);
+            var span = g.interval * 10; if span <= 0 { span = 1; }
+            pixels.DrawBox(1130, 66, 178 * g.countdown / span, 6, art.GOLD);
+            self.wedge(1296, 34, art.GOLD);
+        } else {
+            self.text(1130, 20, "BONUS", art.MUTED);
+            self.big(1130, 38, "TAKEN", 2, art.GOLD);
+            self.text(1130, 66, Fmt.Int(g.bonuses) + " THIS HEIST", art.MUTED);
+        }
+    }
+
+    hide func lanes(g: rules.Board) {
+        for i in 0..g.cats.length() {
+            if !g.hunting(i) { continue; }
+            var c = g.cats.get(i);
+            for d in 0..4 {
+                var x = c.x + rules.dx(d); var y = c.y + rules.dy(d);
+                while g.tile(x, y) == 0 {
+                    target.DrawPixels(BX + x * art.SIZE, BY + y * art.SIZE, bank.lane);
+                    x = x + rules.dx(d); y = y + rules.dy(d);
                 }
             }
         }
-        var exitId = 8; if g.exitOpen() { exitId = 9; }
-        self.sprite(exitId, BX + g.ex * art.SIZE, BY + g.ey * art.SIZE);
-        for i in 0..g.cheese.length() {
-            var pos = g.cheese.get(i);
-            self.sprite(3, BX + (pos % rules.W) * art.SIZE, BY + (pos / rules.W) * art.SIZE);
+    }
+
+    hide func catSprite(g: rules.Board, i: Integer) {
+        var c = g.cats.get(i);
+        var elapsed = (g.ticks - c.movedTick) * 100 + phase;
+        if elapsed > SLIDE { elapsed = SLIDE; } if elapsed < 0 { elapsed = 0; }
+        var px = BX + c.px * art.SIZE + (c.x - c.px) * art.SIZE * elapsed / SLIDE;
+        var py = BY + c.py * art.SIZE + (c.y - c.py) * art.SIZE * elapsed / SLIDE;
+        var bob = 0; if elapsed < SLIDE && (elapsed / 50) % 2 == 0 { bob = -3; }
+        if c.kind == 0 && c.searching {
+            target.DrawPixels(px - 16, py - 16 + (g.ticks % 6) / 3, bank.goldHalo);
         }
-        for i in 0..g.cats.length() {
-            var c = g.cats.get(i);
-            if c.alive {
-                var px = BX + c.x * art.SIZE; var py = BY + c.y * art.SIZE;
-                self.sprite(5 + c.kind, px, py);
-                // Cats may occupy cheese; keep the pickup visible as a gold badge.
-                if g.cheeseAt(c.x, c.y) >= 0 {
-                    pixels.DrawBox(px + 50, py + 1, 13, 13, art.INK);
-                    pixels.DrawTriangle(px + 52, py + 6, px + 60, py + 3, px + 60, py + 11, art.GOLD);
-                }
-                // One or two pips describe the number of turns until movement.
-                if c.kind != 0 {
-                    for pip in 0..g.nextMove(c.kind) {
-                        pixels.DrawBox(px + 24 + pip * 8, py + 60, 4, 3, art.PAPER);
+        if g.state == rules.CAUGHT && g.killer == i { target.DrawPixels(px - 16, py - 16, bank.redHalo); }
+        if c.hold > 0 && (g.ticks / 2) % 2 == 0 { return; }
+        target.DrawPixels(px, py + bob, bank.sprites.get(5 + c.kind));
+        if c.kind == 0 && c.searching {
+            pixels.DrawBox(px + 19, py + 34 + bob, 9, 5, art.GOLD); pixels.DrawBox(px + 36, py + 34 + bob, 9, 5, art.GOLD);
+        }
+        if g.cheeseAt(c.x, c.y) >= 0 {
+            pixels.DrawBox(px + 48, py + 2, 14, 14, art.INK); self.wedge(px + 49, py + 3, art.GOLD);
+        }
+        if c.hold > 0 { pixels.DrawFrame(px + 1, py + 1, art.SIZE - 2, art.SIZE - 2, art.PAPER); }
+    }
+
+    hide func board(g: rules.Board, showLanes: Boolean) {
+        pixels.DrawBox(BX - 8, BY - 8, rules.W * art.SIZE + 16, rules.H * art.SIZE + 16, art.WOOD);
+        pixels.DrawFrame(BX - 8, BY - 8, rules.W * art.SIZE + 16, rules.H * art.SIZE + 16, 0x5A4030);
+        pixels.DrawFrame(BX - 5, BY - 5, rules.W * art.SIZE + 10, rules.H * art.SIZE + 10, 0x241810);
+        for y in 0..rules.H {
+            for x in 0..rules.W {
+                var px = BX + x * art.SIZE; var py = BY + y * art.SIZE;
+                var tile = g.tile(x, y);
+                if tile == 1 { self.sprite(1, px, py); continue; }
+                target.DrawPixels(px, py, bank.floors.get(((x + y) % 2) + ((x * 3 + y * 5) % 4) * 2));
+            }
+        }
+        if showLanes && g.state == rules.PLAY { self.lanes(g); }
+        if g.exitShown { self.sprite(9, BX + g.ex * art.SIZE, BY + g.ey * art.SIZE); }
+        for y in 1..rules.H - 1 {
+            for x in 1..rules.W - 1 {
+                var tile = g.tile(x, y);
+                if tile >= 2 {
+                    var px = BX + x * art.SIZE; var py = BY + y * art.SIZE;
+                    var id = 2; if tile == 3 { id = 11; }
+                    self.sprite(id, px, py);
+                    if g.lastDrop == y * rules.W + x && g.ticks - g.lastDropTick < 4 {
+                        pixels.DrawFrame(px + 2, py + 2, art.SIZE - 4, art.SIZE - 4, art.PAPER);
                     }
                 }
             }
         }
+        for i in 0..g.cheese.length() {
+            var pos = g.cheese.get(i);
+            var bob = 0; if ((g.ticks / 4) + pos) % 2 == 0 { bob = -2; }
+            self.sprite(3, BX + (pos % rules.W) * art.SIZE, BY + (pos / rules.W) * art.SIZE + bob);
+        }
+        if g.bonus >= 0 {
+            var bx = BX + (g.bonus % rules.W) * art.SIZE; var by = BY + (g.bonus / rules.W) * art.SIZE;
+            self.sprite(10, bx, by);
+            pixels.DrawRing(bx + 32, by + 34, 24 + (g.ticks % 8) / 2, Color.Rgba(240, 189, 85, 150 - (g.ticks % 8) * 15));
+        }
+        for i in 0..g.cats.length() { if g.cats.get(i).alive { self.catSprite(g, i); } }
         var mx = BX + g.mx * art.SIZE; var my = BY + g.my * art.SIZE;
-        self.sprite(4, mx, my);
-        var ring = 0xA8D8A3;
-        if g.state == rules.DEAD || g.state == rules.OVER { ring = art.RED; }
+        if g.facing == 2 { target.DrawPixels(mx, my, bank.mouseLeft); } else { self.sprite(4, mx, my); }
+        var ring = art.GREEN;
+        if g.state == rules.DEAD || g.state == rules.OVER || g.state == rules.CAUGHT { ring = art.RED; }
+        else if (g.ticks / 5) % 2 == 0 { ring = 0x7FB37A; }
         pixels.DrawFrame(mx + 1, my + 1, art.SIZE - 2, art.SIZE - 2, ring);
+        if g.state == rules.PLAY && g.grace > 0 {
+            pixels.DrawBox(BX + 500, BY + 8, 280, 44, art.INK);
+            pixels.DrawBox(BX + 496, BY + 4, 280, 44, art.PAPER);
+            self.big(BX + 548, BY + 18, "GET READY", 2, art.INK);
+            pixels.DrawBox(BX + 496, BY + 44, 280 * g.grace / rules.GRACE, 4, art.GOLD);
+        }
+        if g.state == rules.CAUGHT {
+            pixels.DrawBox(BX + 500, BY + 8, 280, 44, art.INK);
+            pixels.DrawBox(BX + 496, BY + 4, 280, 44, art.RED);
+            self.big(BX + 556, BY + 18, "SPOTTED!", 2, art.PAPER);
+        }
     }
 
-    hide func footer(g: rules.Board, lanes: Boolean, muted: Boolean) {
-        self.text(33, FOOT, g.message, art.INK);
-        self.text(33, FOOT + 27, "ARROWS/WASD  MOVE + PUSH    SPACE  WAIT    P  PAUSE    H  HELP    R  SURRENDER", 0x63756C);
-        var laneText = "L  LANES ON"; if !lanes { laneText = "L  LANES OFF"; }
-        var soundText = "M  MUSIC ON"; if muted { soundText = "M  MUSIC OFF"; }
-        self.text(1040, FOOT, laneText, art.INK); self.text(1184, FOOT, soundText, art.INK);
-        self.text(1040, FOOT + 27, "TURN " + Fmt.Int(g.turn), 0x63756C);
+    hide func footer(g: rules.Board, showLanes: Boolean, muted: Boolean) {
+        pixels.DrawBox(0, FOOT - 24, WIDTH, HEIGHT - FOOT + 24, art.NIGHT);
+        pixels.DrawBox(0, FOOT - 24, WIDTH, 3, art.GOLD);
+        self.text(33, FOOT, g.message, art.PAPER);
+        var laneText = "LANES ON"; if !showLanes { laneText = "LANES OFF"; }
+        var soundText = "MUSIC ON"; if muted { soundText = "MUSIC OFF"; }
+        var x = self.keycap(1040, FOOT + 4, "L", laneText);
+        x = self.keycap(x, FOOT + 4, "M", soundText);
+        self.text(1040, FOOT + 27, "TURN " + Fmt.Int(g.turn) + "   TIME " + seconds(g.ticks), art.MUTED);
     }
 
     /// @brief Device-specific hints without covering any board cell.
     expose func inputHints(pad: Boolean, mode: Integer, g: rules.Board) {
-        pixels.DrawBox(32, FOOT + 23, 1000, 22, art.PAPER);
-        var hint = "ARROWS/WASD MOVE   SPACE WAIT   P/ESC PAUSE   H HELP   R SURRENDER   N SFX";
-        if pad { hint = "D-PAD/STICK MOVE   X WAIT   START/B PAUSE   Y LANES   RB SURRENDER"; }
-        if mode != 0 || g.state != rules.PLAY {
-            hint = "ENTER CONFIRM / CONTINUE     ESC BACK";
-            if pad { hint = "A CONFIRM / CONTINUE     B BACK"; }
+        pixels.DrawBox(32, FOOT + 20, 1000, 26, art.NIGHT);
+        var y = FOOT + 30;
+        if mode != 0 || (g.state != rules.PLAY && g.state != rules.CAUGHT) {
+            var x = self.keycap(33, y, "ENTER", "CONFIRM / CONTINUE");
+            if pad { x = self.keycap(33, y, "A", "CONFIRM / CONTINUE"); }
+            if pad { x = self.keycap(x, y, "B", "BACK"); } else { x = self.keycap(x, y, "ESC", "BACK"); }
+            return;
         }
-        self.text(33, FOOT + 27, hint, 0x63756C);
+        var x = 33;
+        if pad {
+            x = self.keycap(x, y, "D-PAD", "MOVE + PUSH"); x = self.keycap(x, y, "X", "WAIT");
+            x = self.keycap(x, y, "START", "PAUSE"); x = self.keycap(x, y, "Y", "LANES");
+            x = self.keycap(x, y, "RB", "SURRENDER"); x = self.keycap(x, y, "LB", "RESTART");
+        } else {
+            x = self.keycap(x, y, "ARROWS / WASD", "MOVE + PUSH"); x = self.keycap(x, y, "SPACE", "WAIT");
+            x = self.keycap(x, y, "P", "PAUSE"); x = self.keycap(x, y, "H", "HELP");
+            x = self.keycap(x, y, "R", "SURRENDER"); x = self.keycap(x, y, "BKSP", "RESTART");
+        }
     }
 
     hide func panel(title: String, subtitle: String) {
-        pixels.DrawBox(228, 226, 904, 436, 0x0E2529);
+        target.DrawPixels(0, 0, bank.dim);
+        pixels.DrawBox(230, 228, 904, 436, 0x0B1B1E);
         pixels.DrawBox(220, 218, 904, 436, art.PAPER);
-        pixels.DrawFrame(230, 228, 884, 416, 0xBEBAA2);
+        pixels.DrawFrame(228, 226, 888, 420, 0xBEBAA2);
+        pixels.DrawBox(220, 218, 904, 6, art.GOLD);
         self.big(260, 257, title, 3, art.INK);
+        pixels.DrawBox(260, 290, 824, 2, 0xD9CDB0);
         self.text(260, 302, subtitle, 0x63756C);
     }
 
     hide func mapScreen(g: rules.Board) {
-        pixels.DrawBox(32, BY, WIDTH - 64, rules.H * art.SIZE, art.INK);
+        pixels.DrawBox(32, BY, WIDTH - 64, rules.H * art.SIZE, art.NIGHT);
+        for i in 0..40 {
+            var x = 48 + (i * 197) % 1240; var y = BY + 12 + (i * 89) % 660;
+            pixels.DrawBox(x, y, 2, 2, 0x2E4A4D);
+        }
+        pixels.DrawDisc(1180, 190, 40, 0xE9E2C8); pixels.DrawDisc(1194, 180, 34, art.NIGHT);
         self.big(72, 160, "THE HOUSE, ONE ROOM AT A TIME", 3, art.PAPER);
         self.text(74, 205, "ROOM SECURED. THE HEIST CONTINUES UPSTAIRS.", art.GOLD);
         for n in 0..10 {
             var col = n % 5; var row = n / 5;
             if row == 1 { col = 4 - col; }
             var x = 74 + col * 240; var y = 257 + row * 170;
-            var color = 0x365452;
-            if n < g.room { color = 0x688C74; }
-            if n == g.room { color = art.GOLD; }
+            var color = 0x2E4A4D; var ink = art.MUTED;
+            if n < g.room { color = 0x4E7A62; ink = art.PAPER; }
+            if n == g.room { color = art.GOLD; ink = art.INK; }
             if n < 9 {
-                if n == 4 { pixels.DrawLine(x + 95, y + 70, x + 95, y + 170, 0x648479); }
-                else if row == 0 { pixels.DrawLine(x + 190, y + 35, x + 240, y + 35, 0x648479); }
-                else { pixels.DrawLine(x, y + 35, x - 50, y + 35, 0x648479); }
+                var path = 0x648479;
+                if n == 4 { for k in 0..10 { pixels.DrawBox(x + 94, y + 74 + k * 10, 3, 5, path); } }
+                else if row == 0 { for k in 0..5 { pixels.DrawBox(x + 194 + k * 10, y + 34, 5, 3, path); } }
+                else { for k in 0..5 { pixels.DrawBox(x - 6 - k * 10, y + 34, 5, 3, path); } }
             }
+            pixels.DrawBox(x + 4, y + 4, 190, 70, 0x0B1B1E);
             pixels.DrawBox(x, y, 190, 70, color);
-            self.big(x + 15, y + 20, Fmt.Int(n + 1), 3, art.INK);
-            if n < g.room { self.text(x + 66, y + 29, "CLEAR", art.INK); }
-            if n == g.room { self.text(x + 66, y + 29, "NEXT", art.INK); }
+            pixels.DrawBox(x, y, 190, 4, 0xF6E3A6); if n != g.room { pixels.DrawBox(x, y, 190, 4, 0x5E8A75); }
+            if n > g.room { pixels.DrawBox(x, y, 190, 4, 0x3E5C5F); }
+            self.big(x + 15, y + 22, Fmt.Int(n + 1), 3, ink);
+            if n < g.room { self.text(x + 66, y + 31, "CLEAR", ink); }
+            if n == g.room { self.text(x + 66, y + 31, "NEXT", ink); }
+            var mini = 5; if n >= 1 { mini = 6; } if n >= 7 { mini = 7; }
+            target.DrawPixels(x + 132, y + 6, bank.sprites.get(mini));
             self.text(x, y + 82, rooms.name(n), art.PAPER);
         }
+        var col = g.room % 5; var row = g.room / 5; if row == 1 { col = 4 - col; }
+        if g.room < 10 { target.DrawPixels(74 + col * 240 + 64, 257 + row * 170 - 64, bank.sprites.get(4)); }
         self.text(74, 595, rooms.hint(g.room), art.PAPER);
         self.big(74, 658, "ENTER  NEXT ROOM", 2, art.GOLD);
         self.text(980, 665, Fmt.Int(g.lives) + " LIVES REMAIN", art.PAPER);
     }
 
     /// @brief Gameplay, map, help, confirmation and ending screens; menus.zia owns the front end.
-    expose func draw(g: rules.Board, mode: Integer, lanes: Boolean, muted: Boolean) {
-        self.header(g); self.board(g, lanes); self.footer(g, lanes, muted);
+    expose func draw(g: rules.Board, mode: Integer, showLanes: Boolean, muted: Boolean) {
+        self.header(g); self.board(g, showLanes); self.footer(g, showLanes, muted);
         if mode == 3 {
-            self.panel("THE ART OF STAYING HIDDEN", "One keypress is one turn. You have all the time you need to think.");
-            self.text(260, 345, "ARROWS / WASD   Move one square. Walk into a crate to push it.", art.INK);
-            self.text(260, 371, "SPACE           Wait a turn. Cats and the scatter clock still advance.", art.INK);
-            self.text(260, 410, "Cats see along rows and columns. Walls and crates stop their gaze.", art.INK);
-            self.text(260, 434, "Blue and violet cats move on the rhythm of their pips.", art.INK);
-            self.text(260, 458, "Box a moving cat on FOUR sides with walls/crates to remove it.", art.INK);
-            self.text(260, 482, "At least one side must be a crate. Amber sentries cannot be removed.", art.INK);
-            self.text(260, 506, "Cheese scatters on the countdown. Collected cheese is yours for good.", art.INK);
-            self.text(260, 530, "Deaths cost a life. The room stays changed. R offers a costly escape.", art.INK);
+            self.panel("THE ART OF STAYING HIDDEN", "Cats roam in real time. You move one square per key press.");
+            self.text(260, 335, "ARROWS / WASD   Move one square. Walk into a crate to push it.", art.INK);
+            self.text(260, 359, "Cats see along rows and columns. Crates stop their gaze.", art.INK);
+            self.text(260, 383, "Amber sentries stay put and only hunt while they GLOW.", art.INK);
+            self.text(260, 407, "Blue and violet cats wander and drop a crate every few steps.", art.INK);
+            self.text(260, 431, "After the cheese, box EVERY wandering cat on four sides to open the exit.", art.INK);
+            self.text(260, 455, "Box one in earlier and it simply finds another way in.", art.INK);
+            self.text(260, 479, "The star bonus hops around on a timer. Cheese stays where it spawned.", art.INK);
+            self.text(260, 503, "The exit only appears once the room's objective is complete.", art.INK);
+            self.text(260, 527, "Deaths cost a life. BACKSPACE restarts the room for a life too.", art.INK);
             self.text(260, 566, "L  lanes     M  music     N  sound effects     P / ESC  pause", 0x63756C);
             self.big(260, 602, "ENTER / H  BACK", 2, art.INK); return;
         }
-        if mode == 4 || mode == 5 {
+        if mode == 4 || mode == 5 || mode == 9 {
             var title = "LEAVE THE HEIST?";
             if mode == 4 { title = "LEAVE THIS HIDING SPOT?"; }
-            if mode == 5 { title = "LEAVE THE HEIST?"; }
-            self.panel(title, "The board is paused. No cats move and no cheese scatters.");
+            if mode == 9 { title = "RESTART THIS ROOM?"; }
+            self.panel(title, "The board is paused. No cats move and the bonus stays put.");
             if mode == 4 {
                 self.text(260, 387, "Surrender costs ONE LIFE and returns you to the nearest safe refuge.", art.INK);
                 self.text(260, 421, "Crates, cheese and cats stay exactly as they are. There is no undo.", art.INK);
                 self.big(260, 524, "ENTER  SURRENDER     ESC  CANCEL", 2, art.INK);
+            } else if mode == 9 {
+                self.text(260, 387, "Restarting costs ONE LIFE and rebuilds the room with new cheese,", art.INK);
+                self.text(260, 411, "bonus and cat positions. Collected cheese in this room is lost.", art.INK);
+                self.text(260, 445, "Use it when crates have boxed the cheese in.", 0x63756C);
+                self.big(260, 524, "ENTER  RESTART     ESC  CANCEL", 2, art.INK);
             } else {
                 self.text(260, 387, "Leaving ends this run. There is no saved checkpoint.", art.INK);
                 self.big(260, 524, "ENTER  QUIT     ESC  KEEP PLAYING", 2, art.INK);
@@ -211,9 +336,11 @@ class View {
         if g.state == rules.MAP { self.mapScreen(g); }
         if g.state == rules.DEAD {
             self.panel("CAUGHT IN A CLEAR LANE", "You lost a life. The changed room stays exactly as you left it.");
+            target.DrawPixels(1000, 330, bank.heroCat);
             self.big(260, 375, Fmt.Int(g.lives) + " LIVES LEFT", 3, art.INK);
             self.text(260, 438, "Look at the position before you return. Cover is your only weapon.", art.INK);
             self.big(260, 543, "ENTER  RETURN TO COVER", 2, art.INK);
+            self.text(260, 585, "BACKSPACE  RESTART THE ROOM (COSTS A LIFE)", 0x63756C);
         }
         if g.state == rules.OVER || g.state == rules.WON {
             var title = "THE HOUSE WINS THIS TIME";
@@ -223,8 +350,9 @@ class View {
                 subtitle = "Ten rooms cleared. One very well-fed mouse. Not a single weapon.";
             }
             self.panel(title, subtitle);
+            if g.state == rules.WON { target.DrawPixels(940, 340, bank.heroMouse); } else { target.DrawPixels(1000, 330, bank.heroCat); }
             self.big(260, 372, Fmt.Int(profile.score(g)) + " POINTS", 3, art.INK);
-            self.text(260, 426, "CATS BOXED IN: " + Fmt.Int(g.captures), art.INK);
+            self.text(260, 426, "CATS BOXED IN: " + Fmt.Int(g.captures) + "   BONUSES: " + Fmt.Int(g.bonuses), art.INK);
             self.text(260, 455, "TURNS: " + Fmt.Int(g.totalTurns) + "   LIVES LEFT: " + Fmt.Int(g.lives), art.INK);
             self.big(260, 548, "ENTER  HIGH SCORES     ESC  MAIN MENU", 2, art.INK);
         }

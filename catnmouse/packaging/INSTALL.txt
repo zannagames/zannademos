@@ -1,4 +1,4 @@
-CAT 'N' MOUSE 1.0.0
+CAT 'N' MOUSE 1.1.4
 The Midnight Cheese Heist
 
 Requires an Apple silicon Mac (M1 or later), macOS 14 Sonoma or later.
@@ -10,9 +10,10 @@ INSTALL
 3. Eject the disk image. Open Cat 'n' Mouse from Applications.
 
 FIRST LAUNCH / GATEKEEPER
-This build uses ad-hoc signing, like the Legacy Baseball demo. Its bundle
-signature is checked for integrity, but it is NOT Developer ID signed or
-notarized by Apple. macOS may block the first launch after download.
+This build uses ad-hoc signing with the hardened runtime, like the Legacy
+Baseball demo. Its bundle signature is checked for integrity, but it is NOT
+Developer ID signed or notarized by Apple. macOS may block the first launch
+after download.
 
 Only if you trust the source of this copy:
 1. Try opening the installed app once, then dismiss the warning.
@@ -29,13 +30,17 @@ Apple's instructions:
 https://support.apple.com/102445
 
 PLAY
-Collect all twelve cheese pieces and reach the exit in each of ten rooms.
-Rooms 4, 7 and 10 also require boxing in every cat. Walls and crates block
-the cats' deadly straight sightlines. Push crates by walking into them.
-Time advances only when you move, push or wait. There is no contact damage.
+Collect all twelve cheese pieces, then find the exit that appears, in each
+of ten rooms. Every room also requires boxing in every roaming cat first.
+Cats roam in real time and drop crates behind them; crates block their
+deadly straight sightlines. Amber sentries only hunt while they glow. Push
+crates by walking into them. Grab the star bonus before it hops away. If a
+cat spots you it walks over before you lose a life. Backspace restarts a
+room for one life when the cheese gets boxed in.
 
-Move: arrow keys / WASD / controller D-pad or left stick
+Move: arrow keys / WASD / controller D-pad or left stick (hold to run)
 Wait: Space / controller X (Square)
+Restart room: Backspace or T / controller left bumper
 Confirm: Enter / controller A (Cross)
 Back: Escape / controller B (Circle)
 Pause: P / controller Start (Options)
@@ -51,7 +56,7 @@ Uninstall by moving only the app to Trash. This preserves your scores.
 
 VERIFY
 The accompanying .dmg.sha256 file verifies the disk image:
-  shasum -a 256 -c Cat-n-Mouse-1.0.0-macos-arm64.dmg.sha256
+  shasum -a 256 -c Cat-n-Mouse-1.1.4-macos-arm64.dmg.sha256
 An integrity checksum is not proof of the publisher's identity. This build
 does not claim automatic Gatekeeper approval or Apple notarization.
 

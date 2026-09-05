@@ -46,7 +46,20 @@ func start() {
     require(p.count(2) == 1 && p.entry(2, 0).points == 29300 && !s.active, "score and exactly-once record");
     require(s.command("enter") && s.mode == session.SCORES && s.scoreTab == 2, "ending opens own difficulty scores");
     require(s.command("escape") && s.mode == session.TITLE && s.command("enter"), "new campaign from title");
-    require(s.game.lives == 7 && s.game.interval == 14 && s.game.cadence(1) == 3 && s.game.cadence(2) == 2, "cozy rules");
+    require(s.game.lives == 7 && s.game.interval == 14 && s.game.cadence(1) == 11 && s.game.cadence(2) == 8, "cozy rules");
+    require(!s.tick() || s.mode == session.GAME, "tick only advances the live board");
+    s.game.grace = 0; s.game.cats.get(0).searching = true; s.game.mx = s.game.cats.get(0).x; s.game.my = 2;
+    s.game.setTile(s.game.mx, 2, 0);
+    for y in 3..s.game.cats.get(0).y { s.game.setTile(s.game.mx, y, 0); }
+    require(s.tick() && s.game.state == rules.CAUGHT, "lane exposure starts a catch walk");
+    require(!s.command("left") && s.game.turn == 0, "movement is locked during the catch walk");
+    require(s.command("pause") && s.mode == session.PAUSE && !s.tick(), "pause never ticks");
+    require(s.command("pause") && s.mode == session.GAME, "resume from pause");
+    var lives = s.game.lives;
+    require(s.command("restart") && s.mode == session.RESTART, "restart confirmation");
+    require(s.command("escape") && s.mode == session.GAME && s.game.lives == lives, "restart cancel");
+    require(s.command("restart") && s.command("enter") && s.mode == session.GAME, "restart confirms");
+    require(s.game.lives == lives - 1 && s.game.state == rules.PLAY && s.game.collected == 0 && s.game.grace == rules.GRACE, "restart costs a life and rebuilds");
     rooms.load(s.game, 9); require(s.game.interval == 10, "late cozy timer");
     require(s.command("pause") && s.command("down") && s.command("enter"), "return settings");
     s.selected = 5; require(s.command("enter") && s.mode == session.INITIALS, "initials editor");

@@ -5,7 +5,8 @@
 // File: zannademos/catnmouse/rooms.zia
 // Purpose: Author the ten rooms and their linear campaign metadata.
 // Key invariants:
-//   - Clear-all rooms contain only capturable cats; entrances start in cover.
+//   - Only the boundary is fixed; every interior block is a pushable crate.
+//   - No cat can see the entrance when a room begins; a grace period follows.
 // Ownership/Lifetime:
 //   - Layout construction mutates the supplied board, retaining campaign lives.
 // Links: rules.zia, DESIGN.md
@@ -27,82 +28,37 @@ expose func name(n: Integer) -> String {
 }
 
 expose func hint(n: Integer) -> String {
-    if n == 0 { return "Sentries stay put. A crate breaks their gaze."; }
-    if n == 1 { return "Blue stalkers move on the rhythm of their pips."; }
-    if n == 2 { return "Bait a cat around a corner. Stay out of its row."; }
-    if n == 3 { return "Close all four sides to box in the blue cats."; }
-    if n == 4 { return "Purple prowlers move faster. Leave cover."; }
+    if n == 0 { return "Sentries glow when they search. Stay out of their lanes."; }
+    if n == 1 { return "Box in the blue stalker after the cheese to open the exit."; }
+    if n == 2 { return "Grab the star bonus before it hops elsewhere."; }
+    if n == 3 { return "Two blue cats now. Box them both in after the cheese."; }
+    if n == 4 { return "Purple prowlers wander faster. Keep cover close."; }
     if n == 5 { return "A safe passage now may become a firing lane."; }
-    if n == 6 { return "Every cat must go. Use the wall alcoves."; }
-    if n == 7 { return "Watch the whole board, especially the far lanes."; }
+    if n == 6 { return "Every roaming cat must go. Sentries can stay."; }
+    if n == 7 { return "The exit only appears once the cheese is done."; }
     if n == 8 { return "Fewer crates. Every push leaves a lasting mark."; }
     return "Twelve cheese. Four cats. One last way out.";
 }
 
-func wall(g: rules.Board, x: Integer, y: Integer, length: Integer, vertical: Boolean) {
-    for i in 0..length {
-        if vertical { g.setTile(x, y + i, 1); } else { g.setTile(x + i, y, 1); }
-    }
-}
+func crate(g: rules.Board, x: Integer, y: Integer) { if g.tile(x, y) == 0 && g.catAt(x, y) < 0 { g.setTile(x, y, 2); } }
 
 func cat(g: rules.Board, x: Integer, y: Integer, kind: Integer) {
     g.setTile(x, y, 0); g.addCat(x, y, kind);
 }
 
-/// @brief Construct fixed geometry; only cheese uses campaign randomness.
+/// @brief Construct the room; cheese, bonus and cat validation use campaign randomness.
 expose func load(g: rules.Board, n: Integer) {
     g.clearRoom(); g.room = n;
-    g.mustClear = n == 3 || n == 6 || n == 9;
+    g.mustClear = n >= 1;
     g.interval = 10;
     if n >= 3 { g.interval = 8; } if n >= 7 { g.interval = 6; }
     if g.difficulty == 0 { g.interval = g.interval + 4; }
     if g.difficulty == 2 { g.interval = g.interval - 2; }
-    // An L-shaped entry pocket teaches the first push and protects the spawn.
-    wall(g, 3, 1, 2, false); wall(g, 1, 3, 1, false);
-    if n == 0 {
-        wall(g, 6, 2, 3, true); wall(g, 10, 5, 4, false);
-        wall(g, 4, 7, 3, false); wall(g, 15, 7, 2, true);
-    } else if n == 1 {
-        wall(g, 5, 3, 3, false); wall(g, 10, 2, 3, true);
-        wall(g, 4, 6, 2, true); wall(g, 9, 8, 4, false);
-    } else if n == 2 {
-        wall(g, 5, 2, 3, true); wall(g, 5, 4, 3, false);
-        wall(g, 11, 6, 5, false); wall(g, 9, 8, 2, true);
-    } else if n == 3 {
-        wall(g, 6, 3, 3, false); wall(g, 6, 3, 2, true);
-        wall(g, 12, 6, 4, false); wall(g, 15, 6, 3, true);
-        wall(g, 4, 8, 3, false); wall(g, 11, 2, 2, true);
-    } else if n == 4 {
-        wall(g, 5, 2, 5, true); wall(g, 9, 4, 5, true);
-        wall(g, 13, 2, 4, true); wall(g, 15, 8, 2, false);
-    } else if n == 5 {
-        wall(g, 4, 3, 5, false); wall(g, 11, 3, 5, false);
-        wall(g, 4, 5, 4, false); wall(g, 11, 5, 5, false);
-        wall(g, 5, 8, 6, false);
-    } else if n == 6 {
-        wall(g, 5, 2, 3, true); wall(g, 5, 4, 3, false);
-        wall(g, 12, 2, 4, false); wall(g, 15, 2, 2, true);
-        wall(g, 7, 7, 4, false); wall(g, 10, 7, 3, true);
-        wall(g, 14, 6, 2, true);
-    } else if n == 7 {
-        wall(g, 4, 4, 4, false); wall(g, 11, 4, 5, false);
-        wall(g, 9, 2, 3, true); wall(g, 9, 6, 3, true);
-        wall(g, 4, 7, 3, false); wall(g, 12, 7, 4, false);
-    } else if n == 8 {
-        wall(g, 4, 2, 6, true); wall(g, 7, 4, 5, true);
-        wall(g, 10, 2, 6, true); wall(g, 13, 4, 5, true);
-        wall(g, 16, 2, 5, true);
-    } else {
-        wall(g, 5, 2, 3, true); wall(g, 5, 4, 3, false);
-        wall(g, 11, 2, 4, false); wall(g, 14, 2, 2, true);
-        wall(g, 4, 7, 3, false); wall(g, 6, 7, 3, true);
-        wall(g, 11, 6, 3, true); wall(g, 11, 8, 4, false);
-    }
     var kind = 0;
     if n >= 1 { kind = 1; } if n >= 7 { kind = 2; }
     cat(g, 13, 3, kind);
     var second = 0;
-    if g.mustClear || n >= 4 { second = 1; }
+    if n >= 3 { second = 1; }
     cat(g, 16, 8, second);
     if n >= 2 {
         var third = 1; if n >= 4 { third = 2; }
@@ -110,15 +66,21 @@ expose func load(g: rules.Board, n: Integer) {
     }
     if n >= 6 { cat(g, 11, 5, 1); }
 
-    // Authored crate candidates. Later rooms retain fewer usable crates.
-    var xs: List[Integer] = [2, 4, 7, 9, 12, 15, 3, 6, 9, 12, 17, 2, 5, 8, 11, 15, 3, 6, 10, 13, 17, 4, 8, 12, 18, 2, 6, 10, 15, 18];
-    var ys: List[Integer] = [2, 2, 2, 3, 4, 3, 5, 5, 5, 5, 5, 6, 6, 5, 7, 6, 8, 9, 8, 7, 9, 9, 9, 9, 7, 9, 6, 9, 9, 5];
-    var placed = 0; var target = 24 - n;
+    // An L-shaped entry pocket of crates teaches the first push and protects the spawn.
+    crate(g, 3, 1); crate(g, 1, 3);
+    // Authored crate candidates. Later rooms retain fewer crates; cats add their own.
+    var xs: List[Integer] = [4, 7, 9, 12, 15, 3, 6, 9, 12, 17, 2, 5, 8, 11, 15, 3, 6, 10, 13, 17, 4, 8, 12, 18, 2, 6, 10, 15, 18, 14];
+    var ys: List[Integer] = [2, 2, 3, 4, 3, 5, 5, 5, 5, 5, 6, 6, 5, 7, 6, 8, 9, 8, 7, 9, 9, 9, 9, 7, 9, 6, 9, 9, 5, 2];
+    var placed = 0; var target = 18 - n / 2;
     for i in 0..xs.length() {
-        var x = xs.get(i); var y = ys.get(i);
-        if placed < target && g.tile(x, y) == 0 && g.catAt(x, y) < 0 {
-            g.setTile(x, y, 2); placed = placed + 1;
+        if placed < target && g.tile(xs.get(i), ys.get(i)) == 0 && g.catAt(xs.get(i), ys.get(i)) < 0 {
+            g.setTile(xs.get(i), ys.get(i), 2); placed = placed + 1;
         }
     }
-    g.relocate(); g.message = hint(n);
+    // Item 9: no cat may see the entrance when the room begins.
+    for i in 0..g.cats.length() {
+        var c = g.cats.get(i);
+        if g.clear(c.x, c.y, g.mx, g.my) { g.respawn(i); c.hold = 0; }
+    }
+    g.scatter(); g.placeBonus(); g.event = 0; g.message = hint(n);
 }

@@ -31,7 +31,7 @@ if [ ! -x "$zanna_bin" ]; then
 fi
 mkdir -p "$output_dir"
 output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
-stem=Cat-n-Mouse-1.0.0-macos-arm64
+stem=Cat-n-Mouse-1.1.4-macos-arm64
 for suffix in .dmg .dmg.sha256 .dmg.manifest.json .dmg.zip .dmg.zip.sha256; do
     if [ -e "$output_dir/$stem$suffix" ]; then
         printf 'error: refusing to replace %s\n' "$output_dir/$stem$suffix" >&2
@@ -58,8 +58,10 @@ mkdir "$work/delivery" "$work/mount"
 CATNMOUSE_PACKAGING_OUT="$script_dir" "$zanna_bin" run "$script_dir/generate.zia" -Wall -Werror
 "$zanna_bin" build "$game_root" -o "$work/catnmouse" -Wall -Werror
 "$work/catnmouse" --seed 173 --smoke
+# Ad-hoc signing with the hardened runtime and a sealed bundle is the strictest
+# configuration available without an Apple Developer ID; notarization needs one.
 "$zanna_bin" package "$game_root" --target dmg --arch arm64 \
-    --executable "$work/catnmouse" --macos-sign-mode adhoc \
+    --executable "$work/catnmouse" --macos-sign-mode adhoc --macos-hardened-runtime \
     -o "$work/delivery/$stem.dmg"
 
 hdiutil verify "$work/delivery/$stem.dmg"
@@ -67,7 +69,11 @@ hdiutil attach "$work/delivery/$stem.dmg" -readonly -nobrowse -mountpoint "$work
 mounted=yes
 app="$work/mount/Cat 'n' Mouse.app"
 codesign --verify --deep --strict --verbose=2 "$app"
+codesign -d --verbose=2 "$app" 2>&1 | grep -q 'flags=.*runtime' || {
+    printf 'error: hardened runtime flag missing from the bundle signature.\n' >&2; exit 1; }
 plutil -lint "$app/Contents/Info.plist"
+# Report (never enforce) the Gatekeeper verdict: ad-hoc builds are expected to be rejected.
+spctl --assess --type execute --verbose=2 "$app" 2>&1 | sed 's/^/spctl: /' || true
 test "$(readlink "$work/mount/Applications")" = /Applications
 test -f "$app/Contents/Resources/assets/README.md"
 (cd "$work" && "$app/Contents/MacOS/catnmouse" --seed 173 --zanna-package-smoke)

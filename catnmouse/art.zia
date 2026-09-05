@@ -5,8 +5,9 @@
 // File: zannademos/catnmouse/art.zia
 // Purpose: Generate and cache the complete tile artwork with optional PNG skins.
 // Key invariants:
-//   - All sprites use transparent 64px RGBA buffers and load only at startup.
+//   - All sprites are 64px RGBA buffers authored at tile resolution, built at startup.
 //   - Missing or unreadable overrides retain the procedural fallback.
+//   - Derived buffers (halos, lane tint, dimmer) are never overridable and never rebuilt per frame.
 // Ownership/Lifetime:
 //   - Art owns its sprite list; render targets borrow sprites while drawing.
 // Links: assets/README.md, view.zia
@@ -19,11 +20,15 @@ bind Zanna.System.Environment as Env;
 bind Zanna.Terminal as Terminal;
 
 final SIZE = 64;
+final COUNT = 12;
 final INK = 0x152F32;
 final PAPER = 0xF4EBD8;
 final GOLD = 0xF0BD55;
 final MUTED = 0x94AAA5;
 final RED = 0xDD796A;
+final WOOD = 0x3B2A1E;
+final NIGHT = 0x10272C;
+final GREEN = 0xA8D8A3;
 
 expose func filename(id: Integer) -> String {
     if id == 0 { return "floor.png"; }
@@ -35,108 +40,180 @@ expose func filename(id: Integer) -> String {
     if id == 6 { return "cat_stalker.png"; }
     if id == 7 { return "cat_prowler.png"; }
     if id == 8 { return "exit_closed.png"; }
-    return "exit_open.png";
+    if id == 9 { return "exit_open.png"; }
+    if id == 10 { return "bonus.png"; }
+    return "crate_new.png";
+}
+
+func shadow(p: Pixels, cx: Integer, cy: Integer, rx: Integer, ry: Integer) {
+    p.DrawEllipse(cx, cy, rx, ry, Color.Rgba(8, 20, 22, 110));
+}
+
+/// @brief Floor tile; alt selects the second checker tone. Scuffs are keyed by seed.
+expose func floor(alt: Boolean, seed: Integer) -> Pixels {
+    var p = Pixels.New(SIZE, SIZE);
+    var base = 0x223F42; if alt { base = 0x25454A; }
+    p.FillColor(base);
+    p.DrawLine(0, 0, 63, 0, 0x2C4D51); p.DrawLine(0, 0, 0, 63, 0x2C4D51);
+    p.DrawLine(0, 63, 63, 63, 0x1B3437); p.DrawLine(63, 0, 63, 63, 0x1B3437);
+    var s = seed * 7919 + 13;
+    for i in 0..4 {
+        s = (s * 1103515245 + 12345) % 2147483647;
+        var x = 4 + s % 56; var y = 4 + (s / 64) % 56;
+        var tone = 0x2A4A4E; if i % 2 == 1 { tone = 0x1E393C; }
+        p.DrawLine(x, y, x + 2, y, tone);
+    }
+    return p;
 }
 
 /// @brief Hand-drawn pixel primitives form the default replaceable sprite set.
 expose func generate(id: Integer) -> Pixels {
-    // Author at a common design resolution, then cache at the board's tile size.
-    var p = Pixels.New(40, 40);
+    var p = Pixels.New(SIZE, SIZE);
     if id == 0 {
-        p.FillColor(0x234346);
-        p.DrawLine(0, 39, 39, 39, 0x1D3B3E);
-        p.DrawLine(39, 0, 39, 39, 0x1D3B3E);
-        p.DrawLine(5, 8, 8, 8, 0x2B4A4C);
-        p.SetRgb(30, 30, 0x2D4E50);
+        return floor(false, 0);
     } else if id == 1 {
-        p.FillColor(0x193236);
-        p.DrawBox(1, 2, 38, 35, 0x56716C);
-        p.DrawBox(2, 3, 36, 5, 0x779088);
-        p.DrawLine(2, 19, 37, 19, 0x304D4C);
-        p.DrawLine(20, 3, 20, 18, 0x304D4C);
-        p.DrawLine(10, 20, 10, 35, 0x304D4C);
-        p.DrawLine(31, 20, 31, 35, 0x304D4C);
-        p.DrawLine(3, 21, 8, 21, 0x6E8780);
-        p.DrawLine(13, 21, 28, 21, 0x6E8780);
-    } else if id == 2 {
-        p.DrawBox(4, 7, 33, 31, 0x152F32);
-        p.DrawBox(3, 3, 33, 31, 0x9D623C);
-        p.DrawBox(5, 5, 29, 27, 0xC18A52);
-        p.DrawFrame(7, 7, 25, 23, 0x704729);
-        p.DrawLine(8, 15, 30, 15, 0xA16A3D);
-        p.DrawLine(8, 23, 30, 23, 0xA16A3D);
-        p.DrawThickLine(7, 7, 31, 29, 5, 0xE0AC69);
-        p.DrawLine(9, 7, 32, 28, 0xF2C37F);
-        p.DrawDisc(7, 7, 1, 0x704729); p.DrawDisc(31, 29, 1, 0x704729);
-    } else if id == 3 {
-        p.DrawEllipse(20, 31, 14, 4, 0x193739);
-        p.DrawTriangle(7, 15, 31, 10, 32, 29, 0xA76B2E);
-        p.DrawBox(7, 21, 25, 8, 0xE8A340);
-        p.DrawTriangle(7, 15, 30, 9, 31, 23, 0xFFE18A);
-        p.DrawTriangle(7, 15, 31, 23, 7, 25, 0xF5C655);
-        p.DrawLine(8, 15, 29, 10, 0xFFF0BA);
-        p.DrawDisc(15, 19, 2, 0xC08A37); p.DrawDisc(24, 16, 2, 0xE8B74E);
-        p.DrawDisc(26, 25, 2, 0xBA7D2F); p.DrawDisc(11, 26, 1, 0xBA7D2F);
-    } else if id == 4 {
-        p.DrawEllipse(21, 34, 13, 3, 0x142E32);
-        p.DrawBezier(13, 28, -1, 37, 7, 18, 0xE8A29A);
-        p.DrawDisc(12, 12, 8, INK); p.DrawDisc(28, 12, 8, INK);
-        p.DrawDisc(12, 12, 6, 0xD1D8CE); p.DrawDisc(28, 12, 6, 0xD1D8CE);
-        p.DrawDisc(12, 12, 4, 0xE2A09A); p.DrawDisc(28, 12, 4, 0xE2A09A);
-        p.DrawEllipse(20, 25, 11, 12, INK);
-        p.DrawEllipse(20, 24, 9, 11, 0xE8E8D9);
-        p.DrawEllipse(17, 21, 4, 7, 0xFFFFFF);
-        p.DrawDisc(16, 21, 2, INK); p.DrawDisc(25, 21, 2, INK);
-        p.DrawDisc(20, 28, 2, 0xD58187);
-        p.DrawLine(9, 26, 15, 27, PAPER); p.DrawLine(26, 27, 33, 25, PAPER);
-        p.DrawBox(13, 34, 5, 2, 0xE8A29A); p.DrawBox(23, 34, 5, 2, 0xE8A29A);
-    } else if id >= 5 && id <= 7 {
-        var fur = 0xDDB05F; var light = 0xFCE0A0;
-        if id == 6 { fur = 0x639EAE; light = 0xB0D6DA; }
-        if id == 7 { fur = 0x9C83B6; light = 0xD6B9DE; }
-        p.DrawEllipse(20, 34, 14, 3, 0x142E32);
-        p.DrawTriangle(6, 5, 18, 15, 7, 25, INK);
-        p.DrawTriangle(34, 5, 22, 15, 33, 25, INK);
-        p.DrawTriangle(8, 8, 18, 17, 9, 24, fur);
-        p.DrawTriangle(32, 8, 22, 17, 31, 24, fur);
-        p.DrawTriangle(10, 12, 15, 17, 10, 20, 0xDCA29C);
-        p.DrawTriangle(30, 12, 25, 17, 30, 20, 0xDCA29C);
-        p.DrawEllipse(20, 24, 15, 12, INK);
-        p.DrawEllipse(20, 23, 13, 11, fur);
-        p.DrawEllipse(20, 29, 8, 4, light);
-        p.DrawLine(17, 14, 19, 18, INK); p.DrawLine(23, 14, 22, 18, INK);
-        p.DrawBox(11, 21, 7, 4, light); p.DrawBox(23, 21, 7, 4, light);
-        p.DrawBox(15, 21, 2, 4, INK); p.DrawBox(23, 21, 2, 4, INK);
-        p.DrawTriangle(18, 27, 22, 27, 20, 30, INK);
-        p.DrawLine(2, 27, 12, 28, light); p.DrawLine(28, 28, 38, 27, light);
-        p.DrawLine(3, 31, 12, 30, light); p.DrawLine(28, 30, 37, 31, light);
-        if id == 5 { p.DrawDisc(20, 6, 3, GOLD); }
-        if id == 7 { p.DrawLine(17, 4, 20, 7, light); p.DrawLine(20, 7, 23, 4, light); }
-    } else {
-        var rim = 0x7B9389;
-        if id == 9 { rim = 0xA8D8A3; }
-        p.DrawDisc(20, 19, 16, rim); p.DrawBox(4, 19, 33, 18, rim);
-        p.DrawDisc(20, 20, 12, 0x10272B); p.DrawBox(8, 20, 25, 17, 0x10272B);
-        if id == 8 {
-            p.DrawLine(14, 12, 14, 35, 0x7B9389); p.DrawLine(25, 12, 25, 35, 0x7B9389);
-            p.DrawBox(17, 23, 7, 7, GOLD); p.DrawDisc(20, 26, 1, INK);
-        } else {
-            p.DrawTriangle(23, 20, 29, 26, 23, 32, rim);
-            p.DrawBox(12, 24, 13, 4, rim);
+        p.FillColor(0x33504E);
+        for row in 0..4 {
+            var y = row * 16;
+            var offset = 0; if row % 2 == 1 { offset = 16; }
+            for col in 0..3 {
+                var x = col * 32 - offset;
+                p.DrawBox(x + 1, y + 1, 30, 14, 0x56716C);
+                p.DrawBox(x + 1, y + 1, 30, 3, 0x7A948C);
+                p.DrawBox(x + 1, y + 12, 30, 3, 0x3F5C59);
+                p.DrawLine(x + 4, y + 8, x + 12, y + 8, 0x627E77);
+            }
         }
+        p.DrawLine(0, 0, 63, 0, 0x8AA39A); p.DrawLine(0, 63, 63, 63, 0x193236);
+    } else if id == 2 || id == 11 {
+        var edge = 0x9D623C; var face = 0xC18A52; var frame = 0x704729; var plank = 0xA16A3D;
+        var band = 0xE0AC69; var glint = 0xF2C37F; var top = 0xD9A366;
+        if id == 11 { edge = 0xB08A5C; face = 0xE3C48E; frame = 0x9A7A50; plank = 0xC9A76F; band = 0xF3DFAE; glint = 0xFFF3D0; top = 0xEFD6A6; }
+        p.DrawBox(9, 10, 52, 52, Color.Rgba(8, 20, 22, 95));
+        p.DrawBox(4, 4, 54, 54, edge);
+        p.DrawBox(8, 8, 46, 46, face);
+        p.DrawBox(4, 4, 54, 6, top);
+        p.DrawFrame(11, 11, 40, 40, frame);
+        p.DrawLine(12, 24, 49, 24, plank); p.DrawLine(12, 37, 49, 37, plank);
+        p.DrawThickLine(12, 12, 50, 50, 7, band);
+        p.DrawLine(15, 11, 51, 47, glint);
+        for k in 0..4 {
+            var nx = 13; if k % 2 == 1 { nx = 49; }
+            var ny = 13; if k >= 2 { ny = 49; }
+            p.DrawDisc(nx, ny, 2, frame); p.SetRgb(nx - 1, ny - 1, glint);
+        }
+    } else if id == 3 {
+        shadow(p, 32, 52, 22, 5);
+        p.DrawTriangle(10, 24, 52, 14, 54, 46, 0xA76B2E);
+        p.DrawBox(10, 32, 42, 14, 0xE8A340);
+        p.DrawTriangle(10, 24, 50, 13, 52, 36, 0xFFE18A);
+        p.DrawTriangle(10, 24, 52, 36, 10, 40, 0xF5C655);
+        p.DrawLine(11, 24, 49, 13, 0xFFF0BA);
+        p.DrawDisc(24, 30, 3, 0xC08A37); p.DrawDisc(38, 24, 3, 0xE8B74E);
+        p.DrawDisc(42, 38, 3, 0xBA7D2F); p.DrawDisc(18, 40, 2, 0xBA7D2F);
+        p.SetRgb(23, 29, 0xFFF3C8); p.SetRgb(37, 23, 0xFFF3C8);
+    } else if id == 4 {
+        shadow(p, 33, 56, 20, 4);
+        p.DrawBezier(20, 46, -4, 60, 10, 28, 0xE8A29A);
+        p.DrawBezier(21, 47, -3, 60, 11, 29, 0xC97F79);
+        p.DrawDisc(18, 19, 12, INK); p.DrawDisc(46, 19, 12, INK);
+        p.DrawDisc(18, 19, 9, 0xD1D8CE); p.DrawDisc(46, 19, 9, 0xD1D8CE);
+        p.DrawDisc(18, 19, 6, 0xE2A09A); p.DrawDisc(46, 19, 6, 0xE2A09A);
+        p.DrawEllipse(32, 40, 18, 19, INK);
+        p.DrawEllipse(32, 39, 16, 17, 0xE8E8D9);
+        p.DrawEllipse(24, 44, 4, 3, 0xF7D4CF); p.DrawEllipse(40, 44, 4, 3, 0xF7D4CF);
+        p.DrawDisc(25, 34, 3, INK); p.DrawDisc(40, 34, 3, INK);
+        p.SetRgb(26, 33, 0xFFFFFF); p.SetRgb(41, 33, 0xFFFFFF);
+        p.DrawDisc(32, 46, 3, 0xD58187);
+        p.DrawLine(14, 42, 24, 44, PAPER); p.DrawLine(14, 47, 24, 46, PAPER);
+        p.DrawLine(40, 44, 50, 42, PAPER); p.DrawLine(40, 46, 50, 47, PAPER);
+        p.DrawBox(21, 55, 8, 3, 0xE8A29A); p.DrawBox(36, 55, 8, 3, 0xE8A29A);
+    } else if id >= 5 && id <= 7 {
+        var fur = 0xDDB05F; var light = 0xFCE0A0; var dark = 0xB88A3E;
+        if id == 6 { fur = 0x639EAE; light = 0xB0D6DA; dark = 0x457A88; }
+        if id == 7 { fur = 0x9C83B6; light = 0xD6B9DE; dark = 0x74609A; }
+        shadow(p, 32, 55, 22, 5);
+        p.DrawTriangle(9, 7, 29, 24, 10, 40, INK);
+        p.DrawTriangle(55, 7, 35, 24, 54, 40, INK);
+        p.DrawTriangle(12, 12, 28, 27, 13, 38, fur);
+        p.DrawTriangle(52, 12, 36, 27, 51, 38, fur);
+        p.DrawTriangle(15, 18, 24, 27, 15, 32, 0xDCA29C);
+        p.DrawTriangle(49, 18, 40, 27, 49, 32, 0xDCA29C);
+        p.DrawEllipse(32, 38, 24, 19, INK);
+        p.DrawEllipse(32, 37, 22, 17, fur);
+        p.DrawEllipse(32, 46, 13, 7, light);
+        p.DrawEllipse(32, 26, 14, 6, dark);
+        p.DrawLine(27, 22, 30, 28, INK); p.DrawLine(37, 22, 34, 28, INK);
+        p.DrawBox(18, 33, 11, 7, light); p.DrawBox(35, 33, 11, 7, light);
+        p.DrawBox(24, 33, 3, 7, INK); p.DrawBox(37, 33, 3, 7, INK);
+        p.SetRgb(25, 34, 0xFFFFFF); p.SetRgb(38, 34, 0xFFFFFF);
+        p.DrawTriangle(29, 43, 35, 43, 32, 47, INK);
+        p.DrawLine(4, 43, 19, 45, light); p.DrawLine(45, 45, 60, 43, light);
+        p.DrawLine(5, 49, 19, 48, light); p.DrawLine(45, 48, 59, 49, light);
+        if id == 5 {
+            p.DrawLine(24, 20, 26, 25, INK); p.DrawLine(32, 19, 32, 25, INK); p.DrawLine(40, 20, 38, 25, INK);
+            p.DrawDisc(32, 9, 4, GOLD); p.SetRgb(31, 8, 0xFFF3C8);
+        }
+        if id == 6 {
+            p.DrawBox(20, 52, 24, 5, RED); p.DrawDisc(32, 58, 3, GOLD);
+        }
+        if id == 7 {
+            p.DrawLine(12, 4, 16, 11, light); p.DrawLine(16, 11, 12, 13, light);
+            p.DrawLine(52, 4, 48, 11, light); p.DrawLine(48, 11, 52, 13, light);
+        }
+    } else if id == 8 || id == 9 {
+        var rim = 0x7B9389; var inner = 0x10272B;
+        if id == 9 { rim = GREEN; }
+        if id == 9 { p.DrawEllipse(32, 58, 30, 6, Color.Rgba(168, 216, 163, 70)); }
+        p.DrawDisc(32, 30, 26, rim); p.DrawBox(6, 30, 52, 30, rim);
+        p.DrawDisc(32, 31, 20, inner); p.DrawBox(12, 31, 40, 27, inner);
+        if id == 8 {
+            p.DrawBox(14, 32, 36, 26, 0x5A4030);
+            p.DrawLine(23, 18, 23, 57, 0x3B2A1E); p.DrawLine(41, 18, 41, 57, 0x3B2A1E);
+            p.DrawDisc(32, 30, 20, 0x5A4030); p.DrawDisc(32, 30, 18, 0x6B4D3A);
+            p.DrawBox(27, 38, 10, 10, GOLD); p.DrawDisc(32, 43, 2, INK);
+        } else {
+            p.DrawBox(12, 31, 40, 27, 0x1B4634); p.DrawDisc(32, 31, 20, 0x1B4634);
+            p.DrawBox(16, 34, 32, 24, 0x2C6A4A); p.DrawDisc(32, 32, 16, 0x2C6A4A);
+            p.DrawTriangle(36, 30, 46, 40, 36, 50, PAPER);
+            p.DrawBox(18, 36, 20, 8, PAPER);
+        }
+    } else {
+        shadow(p, 32, 56, 20, 4);
+        p.DrawDisc(32, 34, 23, 0x0E2529); p.DrawRing(32, 34, 23, GOLD); p.DrawRing(32, 34, 21, 0x6B5A2E);
+        p.DrawTriangle(32, 10, 14, 44, 50, 44, GOLD);
+        p.DrawTriangle(32, 56, 14, 24, 50, 24, GOLD);
+        p.DrawTriangle(32, 18, 22, 40, 42, 40, 0xFFE9A6);
+        p.DrawTriangle(32, 48, 22, 28, 42, 28, 0xFFE9A6);
+        p.DrawDisc(32, 34, 4, 0xFFFFFF);
     }
-    return p.Scale(SIZE, SIZE);
+    return p;
+}
+
+/// @brief Soft glow disc used behind searching sentries (gold) and the catch walk (red).
+expose func halo(color: Integer) -> Pixels {
+    var p = Pixels.New(96, 96);
+    var r = (color / 65536) % 256; var g = (color / 256) % 256; var b = color % 256;
+    p.DrawDisc(48, 48, 30, Color.Rgba(r, g, b, 150));
+    p.DrawDisc(48, 48, 18, Color.Rgba(r, g, b, 210));
+    return p.Blur(9);
 }
 
 class Art {
     expose List[Pixels] sprites;
+    expose List[Pixels] floors;
+    expose Pixels mouseLeft;
+    expose Pixels goldHalo;
+    expose Pixels redHalo;
+    expose Pixels lane;
+    expose Pixels dim;
     expose Pixels heroMouse;
     expose Pixels heroCat;
     expose Integer overrides;
 
     expose func init() {
-        sprites = []; overrides = 0;
-        for id in 0..10 {
+        sprites = []; floors = []; overrides = 0;
+        for id in 0..COUNT {
             var sprite = generate(id);
             var path = self.resolve(filename(id));
             if path != "" {
@@ -147,6 +224,12 @@ class Art {
             }
             sprites.add(sprite);
         }
+        for i in 0..8 { floors.add(floor(i % 2 == 1, i)); }
+        mouseLeft = sprites.get(4).FlipH();
+        goldHalo = halo(GOLD); redHalo = halo(RED);
+        lane = Pixels.New(SIZE, SIZE); lane.FillRgba(0xDD796A3C);
+        lane.DrawFrame(2, 2, SIZE - 4, SIZE - 4, Color.Rgba(221, 121, 106, 120));
+        dim = Pixels.New(1344, 872); dim.FillRgba(0x0B1B1E8C);
         heroMouse = sprites.get(4).Scale(160, 160);
         heroCat = sprites.get(5).Scale(200, 200);
     }

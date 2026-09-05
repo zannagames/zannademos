@@ -3,10 +3,10 @@
 // See LICENSE for license information.
 //===----------------------------------------------------------------------===//
 // File: zannademos/catnmouse/campaign_probe.zia
-// Purpose: Validate authored topology and deterministic state across seeded runs.
+// Purpose: Validate authored topology and deterministic state across seeded real-time runs.
 // Key invariants:
-//   - Fixed walls do not create disconnected pickup islands in any room.
-//   - VM and native execution emit the same state trace for all actions.
+//   - Crates never cover cheese, the bonus or the exit; the exit is reachable when shown.
+//   - VM and native execution emit the same state trace for all actions and ticks.
 // Ownership/Lifetime:
 //   - Each run owns a fresh board; flood queues are local to a room check.
 // Links: rules.zia, rooms.zia, README.md
@@ -22,26 +22,24 @@ func require(ok: Boolean, message: String) {
     if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
 }
 
-func connected(g: rules.Board) {
+/// @brief Floor-only flood from the mouse; returns whether (tx, ty) is reachable.
+func reachable(g: rules.Board, tx: Integer, ty: Integer) -> Boolean {
     var seen: List[Integer] = [];
     while seen.length() < rules.W * rules.H { seen.add(0); }
     var queue: List[Integer] = [g.my * rules.W + g.mx];
     seen.set(queue.get(0), 1); var head = 0;
     while head < queue.length() {
         var pos = queue.get(head); head = head + 1;
+        if pos == ty * rules.W + tx { return true; }
         for d in 0..4 {
             var x = pos % rules.W + rules.dx(d); var y = pos / rules.W + rules.dy(d);
-            if g.tile(x, y) != 1 {
+            if g.tile(x, y) == 0 {
                 var next = y * rules.W + x;
                 if seen.get(next) == 0 { seen.set(next, 1); queue.add(next); }
             }
         }
     }
-    for y in 1..rules.H - 1 {
-        for x in 1..rules.W - 1 {
-            require(g.tile(x, y) == 1 || seen.get(y * rules.W + x) == 1, "wall-disconnected floor");
-        }
-    }
+    return false;
 }
 
 func valid(g: rules.Board) {
@@ -52,6 +50,7 @@ func valid(g: rules.Board) {
         var c = g.cats.get(i);
         if c.alive {
             require(g.tile(c.x, c.y) == 0, "cat occupies floor");
+            require(c.hold >= 0 && c.hold <= rules.GRACE, "hold bounds");
             for j in 0..i {
                 var other = g.cats.get(j);
                 require(!other.alive || other.x != c.x || other.y != c.y, "cats never overlap");
@@ -61,9 +60,16 @@ func valid(g: rules.Board) {
     for i in 0..g.cheese.length() {
         var pos = g.cheese.get(i);
         require(g.tile(pos % rules.W, pos / rules.W) == 0, "cheese never inside a crate");
+        require(pos != g.bonus, "bonus never on cheese");
         for j in 0..i { require(g.cheese.get(j) != pos, "cheese never duplicates"); }
     }
-    if g.state == rules.PLAY { require(!g.danger(g.mx, g.my), "survivor must be covered"); }
+    if g.bonus >= 0 { require(g.tile(g.bonus % rules.W, g.bonus / rules.W) == 0, "bonus never inside a crate"); }
+    if g.exitShown {
+        require(g.tile(g.ex, g.ey) == 0 && g.exitOpen(), "exit only shown when open and on floor");
+        if g.state == rules.PLAY && !(g.mx == g.ex && g.my == g.ey) { require(reachable(g, g.ex, g.ey) || g.catAt(g.ex, g.ey) >= 0, "shown exit stays reachable"); }
+    } else { require(g.ex < 0, "hidden exit has no position"); }
+    if g.state == rules.PLAY { require(!g.lethal(g.mx, g.my), "survivor must be covered"); }
+    if g.state == rules.CAUGHT { require(g.killer >= 0 && g.cats.get(g.killer).alive, "catch walk has a live killer"); }
 }
 
 func start() {
@@ -71,24 +77,27 @@ func start() {
     for room in 0..10 {
         for sample in 1..9 {
             var g = new rules.Board(); g.seed = sample * 173; rooms.load(g, room);
-            connected(g); valid(g);
+            valid(g);
             var count = g.liveCats(); g.capture();
             require(g.liveCats() == count, "no cat begins already captured");
             var moves = sample * 83;
-            for action in 0..240 {
+            for action in 0..320 {
                 moves = (moves * 25173 + 13849) % 65536;
                 if g.state == rules.DEAD { g.resume(); }
-                if g.state == rules.PLAY {
-                    var d = moves % 5;
+                if g.state == rules.PLAY && moves % 3 != 0 {
+                    var d = (moves / 3) % 5;
                     if d == 4 { g.step(0, 0); } else { g.step(rules.dx(d), rules.dy(d)); }
                 }
+                var burst = 1 + (moves / 16) % 4;
+                for _ in 0..burst { g.tick(); }
                 valid(g);
-                trace = (trace * 31 + action + g.mx + g.my * rules.W + g.collected * rules.W * rules.H + g.lives * 4096 + g.state) % 2147483647;
+                trace = (trace * 31 + action + g.mx + g.my * rules.W + g.collected * rules.W * rules.H + g.lives * 4096 + g.state + g.ticks * 7) % 2147483647;
                 for i in 0..g.cheese.length() { trace = (trace * 7 + g.cheese.get(i)) % 2147483647; }
                 for i in 0..g.cats.length() {
                     var c = g.cats.get(i);
-                    if c.alive { trace = (trace * 7 + c.x + c.y * rules.W) % 2147483647; }
+                    if c.alive { trace = (trace * 7 + c.x + c.y * rules.W + c.hold) % 2147483647; }
                 }
+                trace = (trace * 7 + g.bonus + 1) % 2147483647;
             }
         }
     }

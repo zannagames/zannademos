@@ -58,6 +58,11 @@ class Audio {
         self.register("clear", Synth.Sweep(600, 1800, 280, 0));
         self.register("menu", Synth.Tone(700, 35, 3));
         self.register("blocked", Synth.Tone(120, 60, 3));
+        self.register("bonus", Synth.Sweep(900, 1800, 160, 0));
+        self.register("exit", Synth.Sweep(400, 1200, 220, 1));
+        self.register("spotted", Synth.Tone(200, 40, 2));
+        self.register("drop", Synth.Sweep(220, 90, 70, 3));
+        self.register("escape", Synth.Sweep(500, 900, 120, 1));
         music = buildMusic(); ready = true;
     }
     hide func register(name: String, effect: Sound) {
@@ -77,7 +82,9 @@ class Audio {
         if event == 1 { name = "push"; } if event == 2 { name = "cheese"; }
         if event == 3 { name = "capture"; } if event == 4 { name = "death"; }
         if event == 5 { name = "clear"; } if event == 6 { name = "menu"; }
-        if event == 7 { name = "blocked"; }
+        if event == 7 { name = "blocked"; } if event == 8 { name = "bonus"; }
+        if event == 9 { name = "exit"; } if event == 10 { name = "spotted"; }
+        if event == 11 { name = "drop"; } if event == 12 { name = "escape"; }
         if name != "" { var _ = bank.Play(name, 42, 0); }
     }
     expose func shutdown() {

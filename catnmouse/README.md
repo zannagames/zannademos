@@ -1,9 +1,10 @@
 # Cat 'n' Mouse
 
-A complete ten-room tactical cheese heist, written in Zia using Zanna's 2D
+A complete ten-room real-time cheese heist, written in Zia using Zanna's 2D
 runtime. You are the mouse. Collect twelve cheese pieces in each room, keep
-crates between yourself and the cats, and reach the exit. In rooms 4, 7 and 10,
-you must also box in every cat.
+crates between yourself and the roaming cats, grab the star bonus, and reach the
+exit once it appears. From room 2 on, you must also box in every roaming cat
+before the exit will appear.
 
 The board is **20 × 11 cells**, including the enclosing walls, with **64 × 64
 pixels per cell**. The entire 1280 × 704 board stays visible in a 1344 × 872
@@ -48,12 +49,12 @@ in `zannademos/demo_tests.tsv` and run through the usual demo test runner.
 ## macOS installer
 
 The Apple silicon package (macOS 14+) is written to
-`../../zannagames/Cat-n-Mouse-1.0.0-macos-arm64.dmg.zip`, alongside the DMG,
+`../../zannagames/Cat-n-Mouse-1.1.4-macos-arm64.dmg.zip`, alongside the DMG,
 checksums and artifact manifest. Unzip, open the DMG, drag the game to
 Applications, then eject the image. No Zanna installation is needed to play.
 
-The app uses **ad-hoc signing**, matching Legacy Baseball; it is not Apple
-notarized. On first launch, trusted recipients may need to approve this specific
+The app uses **ad-hoc signing with the hardened runtime**, matching Legacy
+Baseball; it is not Apple notarized (that needs a Developer ID identity). On first launch, trusted recipients may need to approve this specific
 app under System Settings → Privacy & Security → Open Anyway. The ZIP includes
 an installation guide with [Apple's instructions](https://support.apple.com/102445).
 Do not disable Gatekeeper globally. Managed Macs can prohibit this exception.
@@ -85,6 +86,7 @@ Intel/universal. A clean downloaded-install test on another Mac remains useful.
 | Help | H / F1 | Back / View |
 | Toggle lane overlay | L | Y / Triangle |
 | Offer surrender (costs one life) | R | Right bumper / R1 |
+| Restart the room (costs one life) | Backspace / T | Left bumper / L1 |
 | Toggle music | M | Settings menu |
 | Toggle sound effects | N | Settings menu |
 
@@ -95,45 +97,60 @@ The analog stick engages at 0.55 and must return within 0.25 of center to rearm;
 diagonals choose the dominant axis. This prevents drift and accidental repeated
 turns. Menus show controller hints after controller input.
 
-Time advances only when you move, push, or wait. There is no key-repeat movement;
-release and press again for another turn. Invalid moves do not spend turns.
+The cats live in real time: the simulation advances in fixed 100 ms ticks while
+the board is live, and pauses in every menu. You move one square per key press.
+Hold a direction to run: the first press moves once, then after a 400 ms pause
+the mouse keeps moving at ten squares per second until you let go. Invalid
+moves do nothing. A "GET READY" banner marks the 1.5 second grace period at the start of
+every room, after every respawn and after a restart: no cat moves or hunts, and
+no cat can see the entrance when a room begins.
 
-Cats see in all four cardinal directions, however far away you are. A wall or
-crate stops a sightline. Cheese and other cats do not. Entering an exposed lane
-costs a life immediately, even if that cat was about to move away. Cats have no
-separate contact-damage rule, but their tiles are occupied and cannot be entered.
+Cats see in all four cardinal directions, however far away you are. A crate or
+the outer wall stops a sightline. Cheese, the bonus and other cats do not.
+Entering a hunting cat's lane, or having one wander into yours, starts the catch:
+your controls lock, the cat walks square by square to you, and only then do you
+lose a life. The cat returns to where it spotted you.
 
-Amber sentries never move and cannot be defeated. On Classic difficulty, blue
-stalkers move every two turns; violet prowlers move every turn. Pips beneath cats show how many
-turns remain until they move. They pursue you through empty neighboring tiles
-and cannot push crates. A gold corner badge means a cat is standing on cheese.
+Amber sentries never move and cannot be removed. They only hunt while they glow;
+between searches they are harmless, on a random timer of 2 to 5 seconds idle and
+1.5 to 3 seconds searching. Blue stalkers and violet prowlers wander at random,
+avoiding immediate reversals, and cannot push crates. Every 14 to 24 steps a
+wanderer drops a fresh pale crate on the square it just left. Drops never land on
+cheese, the bonus, the exit or you, and never seal any of those in completely.
+A gold corner badge means a cat is standing on cheese.
 
-To defeat a mobile cat, close its four neighboring squares with walls or crates,
-including at least one crate. The final enclosing push removes it immediately.
-You cannot push a crate onto another crate, cat, cheese, wall or exit. There is
-no pulling, chain pushing, shooting or undo.
+A wandering cat enclosed on all four sides by crates or walls is removed for good
+once all twelve cheese are collected. Box one in earlier, or trap it between other
+cats, and it simply respawns somewhere covered, out of your lanes, with its own
+short hold before it moves again. You cannot push a crate onto another crate, a
+cat, cheese, the bonus, a wall or the exit. There is no pulling, chain pushing,
+shooting or undo.
 
-On Classic, uncollected cheese scatters to random empty tiles every 10 turns in rooms 1–3,
-8 turns in rooms 4–7, and 6 turns in rooms 8–10. Collected cheese stays collected.
-New locations can be exposed or temporarily cut off: keep useful cover around
-the room and watch the countdown. If there is insufficient floor space, excess
-cheese waits for the next scatter; the outstanding objective is never discarded.
+Cheese spawns at random places when a room begins and never moves. One star
+bonus per room is worth 300 points; it hops to a new random square on a visible
+countdown (10 seconds in rooms 1–3, 8 in 4–7, 6 in 8–10 on Classic) until you
+take it. The exit stays hidden until the room's objective is met: twelve cheese
+and every roaming cat boxed in (room 1 has sentries only, which never count);
+it then appears on a floor square you can walk to.
 
-On Classic, you have five lives for the entire campaign. Deaths preserve moved crates,
-surviving cats, collected cheese and the turn counter. Enter returns you to the
-safe empty square nearest the entrance. If no safe refuge remains, the run ends.
-Surrender uses the same process. New rooms restore their authored layouts, but
-your remaining lives carry forward. There are no saved checkpoints or room
-restarts. An ending records your score; Enter opens the high-score board and
-Escape returns to the main menu, where you can begin a new campaign.
+On Classic, you have five lives for the entire campaign. Deaths preserve moved
+crates, surviving cats, collected cheese and the turn counter. Enter drops you
+on a random covered square, scatters every roaming cat to a random covered spot
+of its own (sentries stay where they are), and grants a fresh grace period. If
+no refuge remains, the run ends. Surrender uses the same process. If crates have boxed the cheese in,
+Backspace offers a restart: it costs one life and rebuilds the room with new
+cheese, bonus and cat positions. New rooms restore their authored layouts, but
+your remaining lives carry forward. There are no saved checkpoints. An ending
+records your score; Enter opens the high-score board and Escape returns to the
+main menu, where you can begin a new campaign.
 
 ## Settings and high scores
 
-| Difficulty | Campaign lives | Stalker / prowler cadence | Cheese scatter: rooms 1–3 / 4–7 / 8–10 |
+| Difficulty | Campaign lives | Stalker / prowler seconds per step | Bonus hop: rooms 1–3 / 4–7 / 8–10 |
 | --- | --- | --- | --- |
-| Cozy | 7 | 3 / 2 turns | 14 / 12 / 10 turns |
-| Classic (default) | 5 | 2 / 1 turns | 10 / 8 / 6 turns |
-| Fierce | 3 | 2 / 1 turns | 8 / 6 / 4 turns |
+| Cozy | 7 | 1.1 / 0.8 | 14 / 12 / 10 seconds |
+| Classic (default) | 5 | 0.9 / 0.5 | 10 / 8 / 6 seconds |
+| Fierce | 3 | 0.8 / 0.4 | 8 / 6 / 4 seconds |
 
 Difficulty changes apply to the next heist; the current run keeps its original
 rules. Music, sound effects, lane assistance and reduced motion change immediately.
@@ -144,7 +161,7 @@ available, the game continues silently.
 Set your three-letter initials in Settings. Each completed or failed campaign
 is recorded once, with separate top-ten lists for each difficulty. Tied scores
 keep their existing order. The score is 100 per cheese, 1,000 per cleared room,
-250 per captured cat, minus 2 per turn, with a floor of zero. Victory adds 5,000
+250 per captured cat, 300 per bonus, minus 2 per turn, with a floor of zero. Victory adds 5,000
 plus 500 per remaining life. Abandoning a live run does not submit a score.
 
 Preferences and scores save atomically through `SaveData` under the `catnmouse`
@@ -157,18 +174,18 @@ empty; the visual probe uses explicitly isolated sample records for screenshots.
 
 ## Artwork and customization
 
-See [assets/README.md](assets/README.md) for the ten PNG names, transparency,
+See [assets/README.md](assets/README.md) for the twelve PNG names, transparency,
 dimensions and search order. Set `CATNMOUSE_ASSETS` to use a separate skin
 directory. Missing or unreadable sprites use the generated defaults.
 
-Rules live in `rules.zia`; the ten fixed room layouts, titles, enemy mixes and
-scatter intervals are in `rooms.zia`. Rendering is in `view.zia`; artwork is in
+Rules live in `rules.zia`; the ten authored crate layouts, titles, enemy mixes and
+bonus intervals are in `rooms.zia`. Rendering is in `view.zia`; artwork is in
 `art.zia`. `session.zia` coordinates menus and campaign state; `menus.zia` draws
 the front end; `profile.zia` owns preferences and scores; `controls.zia` unifies
 keyboard/controller input; `sound.zia` builds audio; `main.zia` owns the native loop.
 
 [DESIGN.md](DESIGN.md) contains the runtime assessment, implementation plan,
-explicit decisions for the gaps in the original brief, turn-resolution order,
+explicit decisions for the gaps in the original brief, tick-resolution order,
 and acceptance scenarios.
 
 ## Reproducibility and checks
@@ -209,9 +226,11 @@ with `catnmouse-test-`. The probe refuses an existing save, verifies atomic
 preferences/score round trips and corrupt-data recovery, and leaves its isolated
 fixture in the platform's application-data directory. It needs write access there.
 
-The checks cover sightline occlusion, legal/illegal pushes, capture, cat cadence,
-death timing, persistent room state, respawn failure, relocation, deterministic
-randomness, room boundaries, objectives, progression, pixel alpha, and all
+The checks cover sightline occlusion, legal/illegal pushes, grace and hold
+periods, sentry searching, random roaming and crate drops, escape/capture,
+the catch walk, persistent room state, respawn failure, static cheese, bonus
+hops, hidden/revealed exits, restarts, deterministic randomness, room
+boundaries, objectives, progression, pixel alpha, and all
 rendered screens, menu transitions, locked difficulty, score ordering, exactly-once
 recording, controller bindings, analog hysteresis, and persistent settings.
 
@@ -219,7 +238,7 @@ recording, controller bindings, analog hysteresis, and persistent settings.
 
 Verified on macOS: native build with `-Wall -Werror`, native window/audio smoke,
 all six registered demo checks, PNG replacement/alpha/fallback, profile persistence
-and corruption recovery, and matching VM/native campaign trace `1968053772`.
+and corruption recovery, and matching VM/native campaign trace `158328625`.
 The repository's 2,024-test run completed; its twelve sandbox-related failures
 passed when rerun with the required filesystem/network/window access. Runtime
 surface audit, platform policy lint and cross-platform smoke scripts also passed.
