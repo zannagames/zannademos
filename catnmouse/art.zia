@@ -6,6 +6,7 @@
 // Purpose: Generate and cache the complete tile artwork with optional PNG skins.
 // Key invariants:
 //   - All sprites are 64px RGBA buffers authored at tile resolution, built at startup.
+//   - Walk frames are derived from the same generator; skinned sprites get no second frame.
 //   - Missing or unreadable overrides retain the procedural fallback.
 //   - Derived buffers (halos, lane tint, dimmer) are never overridable and never rebuilt per frame.
 // Ownership/Lifetime:
@@ -19,6 +20,7 @@ bind Zanna.IO.Path as Path;
 bind Zanna.System.Environment as Env;
 bind Zanna.Terminal as Terminal;
 
+final VERSION = "1.2.0";
 final SIZE = 64;
 final COUNT = 12;
 final INK = 0x152F32;
@@ -49,26 +51,65 @@ func shadow(p: Pixels, cx: Integer, cy: Integer, rx: Integer, ry: Integer) {
     p.DrawEllipse(cx, cy, rx, ry, Color.Rgba(8, 20, 22, 110));
 }
 
-/// @brief Floor tile; alt selects the second checker tone. Scuffs are keyed by seed.
-expose func floor(alt: Boolean, seed: Integer) -> Pixels {
+/// @brief Room theme: 0 pantry tiles (rooms 1-3), 1 wood (4-6), 2 flagstone (7-8), 3 attic boards (9-10).
+expose func theme(room: Integer) -> Integer {
+    if room <= 2 { return 0; } if room <= 5 { return 1; } if room <= 7 { return 2; } return 3;
+}
+
+/// @brief Floor tile; alt selects the second tone. Scuffs and plank joints are keyed by seed.
+expose func floor(alt: Boolean, seed: Integer) -> Pixels { return floorTile(0, alt, seed); }
+
+expose func floorTile(t: Integer, alt: Boolean, seed: Integer) -> Pixels {
     var p = Pixels.New(SIZE, SIZE);
-    var base = 0x223F42; if alt { base = 0x25454A; }
+    var base = 0x223F42; var alt2 = 0x25454A; var hi = 0x2C4D51; var lo = 0x1B3437; var scuffA = 0x2A4A4E; var scuffB = 0x1E393C;
+    if t == 1 { base = 0x4A3524; alt2 = 0x503A28; hi = 0x5C4530; lo = 0x33241A; scuffA = 0x5A432F; scuffB = 0x3C2B1E; }
+    if t == 2 { base = 0x353B41; alt2 = 0x3A4047; hi = 0x4A5159; lo = 0x24292E; scuffA = 0x434A52; scuffB = 0x2C3237; }
+    if t == 3 { base = 0x2F2420; alt2 = 0x352925; hi = 0x43332D; lo = 0x1E1614; scuffA = 0x3E2F29; scuffB = 0x241B18; }
+    if alt { base = alt2; }
     p.FillColor(base);
-    p.DrawLine(0, 0, 63, 0, 0x2C4D51); p.DrawLine(0, 0, 0, 63, 0x2C4D51);
-    p.DrawLine(0, 63, 63, 63, 0x1B3437); p.DrawLine(63, 0, 63, 63, 0x1B3437);
     var s = seed * 7919 + 13;
+    if t == 1 || t == 3 {
+        // Planks: three boards per tile with staggered joints.
+        for b in 0..3 {
+            var y = b * 21;
+            if t == 3 { p.DrawLine(0, y, 63, y, lo); p.DrawLine(0, y + 1, 63, y + 1, hi); }
+            else { p.DrawLine(0, y, 63, y, hi); p.DrawLine(0, y + 20, 63, y + 20, lo); }
+            s = (s * 1103515245 + 12345) % 2147483647;
+            var jx = 6 + s % 52;
+            p.DrawLine(jx, y + 2, jx, y + 19, lo); p.DrawLine(jx + 1, y + 2, jx + 1, y + 19, hi);
+        }
+    } else if t == 2 {
+        // Flagstone: a large irregular slab with a mortar seam.
+        p.DrawFrame(0, 0, 64, 64, lo);
+        p.DrawLine(1, 1, 62, 1, hi); p.DrawLine(1, 1, 1, 62, hi);
+        s = (s * 1103515245 + 12345) % 2147483647;
+        var cut = 20 + s % 24;
+        if seed % 2 == 0 { p.DrawLine(cut, 1, cut + 3, 62, lo); } else { p.DrawLine(1, cut, 62, cut + 2, lo); }
+    } else {
+        p.DrawLine(0, 0, 63, 0, hi); p.DrawLine(0, 0, 0, 63, hi);
+        p.DrawLine(0, 63, 63, 63, lo); p.DrawLine(63, 0, 63, 63, lo);
+    }
     for i in 0..4 {
         s = (s * 1103515245 + 12345) % 2147483647;
         var x = 4 + s % 56; var y = 4 + (s / 64) % 56;
-        var tone = 0x2A4A4E; if i % 2 == 1 { tone = 0x1E393C; }
+        var tone = scuffA; if i % 2 == 1 { tone = scuffB; }
         p.DrawLine(x, y, x + 2, y, tone);
     }
     return p;
 }
 
+/// @brief Body colour of a cat kind, used for blinks drawn over the sprite.
+expose func fur(kind: Integer) -> Integer {
+    if kind == 1 { return 0x639EAE; } if kind == 2 { return 0x9C83B6; } return 0xDDB05F;
+}
+
 /// @brief Hand-drawn pixel primitives form the default replaceable sprite set.
-expose func generate(id: Integer) -> Pixels {
+expose func generate(id: Integer) -> Pixels { return generateFrame(id, 0); }
+
+/// @brief Frame 0 is the standing pose; frame 1 swaps the feet and whiskers for a walk cycle.
+expose func generateFrame(id: Integer, frame: Integer) -> Pixels {
     var p = Pixels.New(SIZE, SIZE);
+    var stride = 0; if frame == 1 { stride = 4; }
     if id == 0 {
         return floor(false, 0);
     } else if id == 1 {
@@ -85,6 +126,7 @@ expose func generate(id: Integer) -> Pixels {
             }
         }
         p.DrawLine(0, 0, 63, 0, 0x8AA39A); p.DrawLine(0, 63, 63, 63, 0x193236);
+        p.DrawBox(0, 58, 64, 6, 0x2B4442); p.DrawLine(0, 58, 63, 58, 0x6E8A82);
     } else if id == 2 || id == 11 {
         var edge = 0x9D623C; var face = 0xC18A52; var frame = 0x704729; var plank = 0xA16A3D;
         var band = 0xE0AC69; var glint = 0xF2C37F; var top = 0xD9A366;
@@ -94,9 +136,14 @@ expose func generate(id: Integer) -> Pixels {
         p.DrawBox(8, 8, 46, 46, face);
         p.DrawBox(4, 4, 54, 6, top);
         p.DrawFrame(11, 11, 40, 40, frame);
-        p.DrawLine(12, 24, 49, 24, plank); p.DrawLine(12, 37, 49, 37, plank);
-        p.DrawThickLine(12, 12, 50, 50, 7, band);
-        p.DrawLine(15, 11, 51, 47, glint);
+        if frame == 2 {
+            p.DrawLine(24, 12, 24, 49, plank); p.DrawLine(37, 12, 37, 49, plank);
+            p.DrawThickLine(12, 31, 50, 31, 7, band); p.DrawLine(13, 29, 49, 29, glint);
+        } else {
+            p.DrawLine(12, 24, 49, 24, plank); p.DrawLine(12, 37, 49, 37, plank);
+            if frame == 1 { p.DrawThickLine(50, 12, 12, 50, 7, band); p.DrawLine(47, 11, 11, 47, glint); }
+            else { p.DrawThickLine(12, 12, 50, 50, 7, band); p.DrawLine(15, 11, 51, 47, glint); }
+        }
         for k in 0..4 {
             var nx = 13; if k % 2 == 1 { nx = 49; }
             var ny = 13; if k >= 2 { ny = 49; }
@@ -125,9 +172,9 @@ expose func generate(id: Integer) -> Pixels {
         p.DrawDisc(25, 34, 3, INK); p.DrawDisc(40, 34, 3, INK);
         p.SetRgb(26, 33, 0xFFFFFF); p.SetRgb(41, 33, 0xFFFFFF);
         p.DrawDisc(32, 46, 3, 0xD58187);
-        p.DrawLine(14, 42, 24, 44, PAPER); p.DrawLine(14, 47, 24, 46, PAPER);
-        p.DrawLine(40, 44, 50, 42, PAPER); p.DrawLine(40, 46, 50, 47, PAPER);
-        p.DrawBox(21, 55, 8, 3, 0xE8A29A); p.DrawBox(36, 55, 8, 3, 0xE8A29A);
+        p.DrawLine(14, 42 + stride / 2, 24, 44, PAPER); p.DrawLine(14, 47 - stride / 2, 24, 46, PAPER);
+        p.DrawLine(40, 44, 50, 42 + stride / 2, PAPER); p.DrawLine(40, 46, 50, 47 - stride / 2, PAPER);
+        p.DrawBox(21 - stride, 55, 8, 3, 0xE8A29A); p.DrawBox(36 + stride, 55, 8, 3, 0xE8A29A);
     } else if id >= 5 && id <= 7 {
         var fur = 0xDDB05F; var light = 0xFCE0A0; var dark = 0xB88A3E;
         if id == 6 { fur = 0x639EAE; light = 0xB0D6DA; dark = 0x457A88; }
@@ -148,8 +195,10 @@ expose func generate(id: Integer) -> Pixels {
         p.DrawBox(24, 33, 3, 7, INK); p.DrawBox(37, 33, 3, 7, INK);
         p.SetRgb(25, 34, 0xFFFFFF); p.SetRgb(38, 34, 0xFFFFFF);
         p.DrawTriangle(29, 43, 35, 43, 32, 47, INK);
-        p.DrawLine(4, 43, 19, 45, light); p.DrawLine(45, 45, 60, 43, light);
-        p.DrawLine(5, 49, 19, 48, light); p.DrawLine(45, 48, 59, 49, light);
+        p.DrawLine(4, 43 - stride / 2, 19, 45, light); p.DrawLine(45, 45, 60, 43 - stride / 2, light);
+        p.DrawLine(5, 49 + stride / 2, 19, 48, light); p.DrawLine(45, 48, 59, 49 + stride / 2, light);
+        p.DrawBox(17 - stride, 56, 9, 4, light); p.DrawBox(38 + stride, 56, 9, 4, light);
+        p.DrawLine(17 - stride, 59, 25 - stride, 59, dark); p.DrawLine(38 + stride, 59, 46 + stride, 59, dark);
         if id == 5 {
             p.DrawLine(24, 20, 26, 25, INK); p.DrawLine(32, 19, 32, 25, INK); p.DrawLine(40, 20, 38, 25, INK);
             p.DrawDisc(32, 9, 4, GOLD); p.SetRgb(31, 8, 0xFFF3C8);
@@ -186,6 +235,7 @@ expose func generate(id: Integer) -> Pixels {
         p.DrawTriangle(32, 18, 22, 40, 42, 40, 0xFFE9A6);
         p.DrawTriangle(32, 48, 22, 28, 42, 28, 0xFFE9A6);
         p.DrawDisc(32, 34, 4, 0xFFFFFF);
+        p.DrawLine(20, 26, 30, 20, 0xFFF6D0);
     }
     return p;
 }
@@ -203,6 +253,13 @@ class Art {
     expose List[Pixels] sprites;
     expose List[Pixels] floors;
     expose Pixels mouseLeft;
+    expose List[Pixels] walk;
+    expose Pixels mouseLeftWalk;
+    expose Pixels greenHalo;
+    expose List[Pixels] crates;
+    expose List[Pixels] stars;
+    expose List[Pixels] icons;
+    expose Integer floorTheme;
     expose Pixels goldHalo;
     expose Pixels redHalo;
     expose Pixels lane;
@@ -224,14 +281,36 @@ class Art {
             }
             sprites.add(sprite);
         }
-        for i in 0..8 { floors.add(floor(i % 2 == 1, i)); }
+        floorTheme = -1; self.retheme(0);
+        crates = [];
+        for variant in 0..3 {
+            if self.resolve(filename(2)) != "" { crates.add(sprites.get(2)); } else { crates.add(generateFrame(2, variant)); }
+        }
+        stars = [];
+        for step in 0..8 { stars.add(sprites.get(10).Rotate(step * 7.5)); }
+        icons = [];
+        for id in 5..8 { icons.add(sprites.get(id).Scale(24, 24)); }
         mouseLeft = sprites.get(4).FlipH();
-        goldHalo = halo(GOLD); redHalo = halo(RED);
+        // Walk frames: ids 4..7 in order; PNG-skinned sprites reuse their single frame.
+        walk = [];
+        for id in 4..8 {
+            if self.resolve(filename(id)) != "" { walk.add(sprites.get(id)); } else { walk.add(generateFrame(id, 1)); }
+        }
+        mouseLeftWalk = walk.get(0).FlipH();
+        goldHalo = halo(GOLD); redHalo = halo(RED); greenHalo = halo(GREEN);
         lane = Pixels.New(SIZE, SIZE); lane.FillRgba(0xDD796A3C);
         lane.DrawFrame(2, 2, SIZE - 4, SIZE - 4, Color.Rgba(221, 121, 106, 120));
         dim = Pixels.New(1344, 872); dim.FillRgba(0x0B1B1E8C);
         heroMouse = sprites.get(4).Scale(160, 160);
         heroCat = sprites.get(5).Scale(200, 200);
+    }
+
+    /// @brief Rebuild the eight floor tiles for a room theme (no-op when unchanged, never per frame).
+    expose func retheme(t: Integer) {
+        if t == floorTheme { return; }
+        floorTheme = t; floors.clear();
+        if self.resolve(filename(0)) != "" { for _ in 0..8 { floors.add(sprites.get(0)); } return; }
+        for i in 0..8 { floors.add(floorTile(t, i % 2 == 1, i)); }
     }
 
     hide func resolve(file: String) -> String {

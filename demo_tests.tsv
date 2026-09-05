@@ -23,6 +23,7 @@ apps/asset_demo	check	.	fast	120	-
 catnmouse	check	.	fast	120	-
 catnmouse	run-probe	rules_probe.zia	fast	120	-
 catnmouse	run-probe	campaign_probe.zia	fast	120	-
+catnmouse	run-probe	generator_probe.zia	fast	120	-
 catnmouse	run-probe	visual_probe.zia	fast	120	-
 catnmouse	run-probe	session_probe.zia	fast	120	-
 catnmouse	run-probe	controls_probe.zia	fast	120	-

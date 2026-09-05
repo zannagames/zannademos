@@ -46,6 +46,8 @@ class Session {
     hide Integer backMode;
     hide Integer helpBack;
     hide Integer quitBack;
+    /// @brief 1-based rank of the last recorded run on its difficulty board, or 0.
+    expose Integer lastRank;
 
     expose func init(seed: Integer, settings: profile.Profile, writeProfile: Boolean) {
         game = new rules.Board(); prefs = settings; nextSeed = seed; persist = writeProfile;
@@ -53,7 +55,7 @@ class Session {
         mode = TITLE; selected = 0; scoreTab = prefs.difficulty;
         cursor = 0; draftName = prefs.name; event = 0;
         active = false; running = true; recorded = false;
-        backMode = TITLE; helpBack = TITLE; quitBack = TITLE;
+        backMode = TITLE; helpBack = TITLE; quitBack = TITLE; lastRank = 0;
     }
     expose func save() { if persist { var _ = prefs.save(); } }
     expose func begin() {
@@ -63,11 +65,17 @@ class Session {
         if game.difficulty == 2 { game.maxLives = 3; }
         game.lives = game.maxLives; game.totalTurns = 0; game.captures = 0; game.bonuses = 0;
         game.seed = nextSeed; nextSeed = (nextSeed + 1) % 2147483647;
-        rooms.load(game, 0); mode = GAME; active = true; recorded = false; event = 5;
+        rooms.load(game, 0); mode = GAME; active = true; recorded = false; event = 5; lastRank = 0;
     }
     expose func finish() {
         if (game.state == rules.OVER || game.state == rules.WON) && !recorded && active {
             prefs.recordRun(game); self.save(); recorded = true; active = false;
+            lastRank = 0;
+            var points = profile.score(game);
+            for rank in 0..10 {
+                var r = prefs.entry(game.difficulty, rank);
+                if r != null && r.points == points && r.turns == game.totalTurns && lastRank == 0 { lastRank = rank + 1; }
+            }
         }
     }
     expose func focusLost() -> Boolean {

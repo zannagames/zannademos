@@ -26,6 +26,8 @@ final BX = 32;
 final BY = 96;
 final FOOT = BY + rules.H * art.SIZE + 24;
 final SLIDE = 200;
+final MOUSE_SLIDE = 90;
+final BLINK = 37;
 
 /// @brief Cadence in ticks rendered as seconds with one decimal.
 expose func seconds(ticks: Integer) -> String { return Fmt.Int(ticks / 10) + "." + Fmt.Int(ticks % 10) + "S"; }
@@ -35,11 +37,35 @@ class View {
     expose Pixels pixels;
     expose art.Art bank;
     expose Integer phase;
+    hide Integer lastMx;
+    hide Integer lastMy;
+    hide Integer fromX;
+    hide Integer fromY;
+    hide Integer slideMs;
+    hide Boolean sliding;
+    hide Integer shownScore;
+    /// @brief 1-based leaderboard rank of the run just recorded, or 0; set by the caller.
+    expose Integer recordRank;
 
     expose func init() {
         target = RenderTarget2D.New(WIDTH, HEIGHT);
         pixels = target.Pixels as Pixels;
         bank = new art.Art(); phase = 0;
+        lastMx = -1; lastMy = -1; fromX = 0; fromY = 0; slideMs = 0; sliding = false;
+        shownScore = -1; recordRank = 0;
+    }
+    /// @brief Advance presentation-only animation (the mouse slide) by dt ms.
+    expose func advance(dt: Integer) {
+        if sliding { slideMs = slideMs + dt; if slideMs >= MOUSE_SLIDE { sliding = false; } }
+    }
+    /// @brief Note the mouse cell; a single-step change starts a slide, anything else snaps.
+    hide func trackMouse(g: rules.Board) {
+        if g.mx != lastMx || g.my != lastMy {
+            if rules.abs(g.mx - lastMx) + rules.abs(g.my - lastMy) == 1 {
+                fromX = lastMx; fromY = lastMy; slideMs = 0; sliding = true;
+            } else { sliding = false; }
+            lastMx = g.mx; lastMy = g.my;
+        }
     }
 
     hide func text(x: Integer, y: Integer, s: String, color: Integer) { pixels.DrawText(x, y, s, color); }
@@ -70,17 +96,23 @@ class View {
         pixels.DrawBox(0, 88, WIDTH, 4, art.GOLD);
         pixels.DrawBox(0, 0, WIDTH, 2, 0x2E4A4D);
         self.big(32, 20, "CAT 'N' MOUSE", 3, art.PAPER);
-        self.text(34, 55, profile.difficultyName(g.difficulty) + "  /  SCORE " + Fmt.Int(profile.score(g)), art.GOLD);
-        self.text(34, 74, "STALKER " + seconds(g.cadence(1)) + " / PROWLER " + seconds(g.cadence(2)) + " PER STEP", art.MUTED);
+        var score = profile.score(g);
+        if g.state != rules.PLAY || shownScore < 0 || shownScore > score { shownScore = score; }
+        else if shownScore < score { shownScore = shownScore + 1 + (score - shownScore) / 6; if shownScore > score { shownScore = score; } }
+        self.text(34, 55, profile.difficultyName(g.difficulty) + "  /  SCORE " + Fmt.Int(shownScore), art.GOLD);
+        self.text(34, 74, "GLOWING SENTRIES HUNT / ROAMERS DROP CRATES", art.MUTED);
         var number = g.room + 1; if number > 10 { number = 10; }
         pixels.DrawBox(408, 14, 4, 62, 0x2E4A4D);
         self.text(432, 20, "ROOM " + Fmt.Int(number) + " OF 10", art.MUTED);
         self.big(432, 38, rooms.name(number - 1), 2, art.PAPER);
-        var contract = "12 CHEESE";
-        if g.mustClear { contract = "12 CHEESE + BOX IN ALL ROAMING CATS"; }
+        var contract = "GOAL: 12 CHEESE";
+        if g.mustClear { contract = "GOAL: 12 CHEESE + BOX ALL ROAMERS"; }
         if g.exitShown { contract = "EXIT OPEN - FIND THE ARCH"; }
-        else if g.collected == 12 { contract = "BOX IN THE LAST " + Fmt.Int(g.liveCats()) + " CATS TO OPEN THE EXIT"; }
-        else { contract = contract + "  /  EXIT HIDDEN"; }
+        else if g.collected == 12 {
+            contract = "BOX IN " + Fmt.Int(g.liveCats()) + " MORE CATS TO OPEN THE EXIT";
+            if g.liveCats() == 1 { contract = "BOX IN THE LAST CAT TO OPEN THE EXIT"; }
+            if g.liveCats() == 0 { contract = "THE EXIT IS OPENING"; }
+        }
         self.text(432, 68, contract, art.GOLD);
         pixels.DrawBox(736, 14, 4, 62, 0x2E4A4D);
         self.text(760, 20, "CHEESE", art.MUTED);
@@ -95,15 +127,20 @@ class View {
             var color = 0x2E4A4D; if i < g.lives { color = art.PAPER; }
             self.mouseIcon(949 + i * 22, 44, color);
         }
-        var roaming = 0; var sentries = 0; var searching = 0;
+        // Cat roster: one icon per cat; gold bar = searching sentry, red frame = catch, X = boxed.
         for i in 0..g.cats.length() {
             var c = g.cats.get(i);
-            if c.alive && c.kind != 0 { roaming = roaming + 1; }
-            if c.alive && c.kind == 0 { sentries = sentries + 1; if c.searching { searching = searching + 1; } }
+            var ix = 940 + i * 32; var iy = 58;
+            if !c.alive {
+                pixels.DrawFrame(ix, iy, 24, 24, 0x2E4A4D);
+                pixels.DrawLine(ix + 5, iy + 5, ix + 18, iy + 18, art.RED); pixels.DrawLine(ix + 18, iy + 5, ix + 5, iy + 18, art.RED);
+                continue;
+            }
+            target.DrawPixels(ix, iy, bank.icons.get(c.kind));
+            if c.kind == 0 && c.searching { pixels.DrawBox(ix, iy + 25, 24, 3, art.GOLD); }
+            if c.hold > 0 { pixels.DrawBox(ix, iy + 25, 24, 3, art.MUTED); }
+            if g.state == rules.CAUGHT && g.killer == i { pixels.DrawFrame(ix - 2, iy - 2, 28, 28, art.RED); }
         }
-        var catLine = "ROAM " + Fmt.Int(roaming);
-        if sentries > 0 { catLine = catLine + " SENT " + Fmt.Int(sentries) + " HUNT " + Fmt.Int(searching); }
-        self.text(940, 70, catLine, art.PAPER);
         pixels.DrawBox(1106, 14, 4, 62, 0x2E4A4D);
         if g.bonus >= 0 {
             self.text(1130, 20, "BONUS HOPS IN", art.MUTED);
@@ -139,15 +176,21 @@ class View {
         if elapsed > SLIDE { elapsed = SLIDE; } if elapsed < 0 { elapsed = 0; }
         var px = BX + c.px * art.SIZE + (c.x - c.px) * art.SIZE * elapsed / SLIDE;
         var py = BY + c.py * art.SIZE + (c.y - c.py) * art.SIZE * elapsed / SLIDE;
-        var bob = 0; if elapsed < SLIDE && (elapsed / 50) % 2 == 0 { bob = -3; }
+        var walking = elapsed < SLIDE;
+        var bob = 0; if walking && (elapsed / 50) % 2 == 0 { bob = -2; }
         if c.kind == 0 && c.searching {
             target.DrawPixels(px - 16, py - 16 + (g.ticks % 6) / 3, bank.goldHalo);
         }
         if g.state == rules.CAUGHT && g.killer == i { target.DrawPixels(px - 16, py - 16, bank.redHalo); }
         if c.hold > 0 && (g.ticks / 2) % 2 == 0 { return; }
-        target.DrawPixels(px, py + bob, bank.sprites.get(5 + c.kind));
+        var frame = bank.sprites.get(5 + c.kind);
+        if walking && (elapsed / 50) % 2 == 1 { frame = bank.walk.get(1 + c.kind); }
+        target.DrawPixels(px, py + bob, frame);
         if c.kind == 0 && c.searching {
             pixels.DrawBox(px + 19, py + 34 + bob, 9, 5, art.GOLD); pixels.DrawBox(px + 36, py + 34 + bob, 9, 5, art.GOLD);
+        } else if !walking && (g.ticks + 9 + i * 11) % BLINK < 2 && g.state == rules.PLAY {
+            pixels.DrawBox(px + 18, py + 33 + bob, 11, 7, art.fur(c.kind)); pixels.DrawBox(px + 35, py + 33 + bob, 11, 7, art.fur(c.kind));
+            pixels.DrawLine(px + 19, py + 36 + bob, px + 28, py + 36 + bob, art.INK); pixels.DrawLine(px + 36, py + 36 + bob, px + 45, py + 36 + bob, art.INK);
         }
         if g.cheeseAt(c.x, c.y) >= 0 {
             pixels.DrawBox(px + 48, py + 2, 14, 14, art.INK); self.wedge(px + 49, py + 3, art.GOLD);
@@ -156,6 +199,7 @@ class View {
     }
 
     hide func board(g: rules.Board, showLanes: Boolean) {
+        bank.retheme(art.theme(g.room));
         pixels.DrawBox(BX - 8, BY - 8, rules.W * art.SIZE + 16, rules.H * art.SIZE + 16, art.WOOD);
         pixels.DrawFrame(BX - 8, BY - 8, rules.W * art.SIZE + 16, rules.H * art.SIZE + 16, 0x5A4030);
         pixels.DrawFrame(BX - 5, BY - 5, rules.W * art.SIZE + 10, rules.H * art.SIZE + 10, 0x241810);
@@ -168,14 +212,23 @@ class View {
             }
         }
         if showLanes && g.state == rules.PLAY { self.lanes(g); }
-        if g.exitShown { self.sprite(9, BX + g.ex * art.SIZE, BY + g.ey * art.SIZE); }
+        if g.exitShown {
+            var exX = BX + g.ex * art.SIZE; var exY = BY + g.ey * art.SIZE;
+            target.DrawPixels(exX - 16, exY - 16 + (g.ticks % 8) / 4, bank.greenHalo);
+            self.sprite(9, exX, exY);
+            var since = g.ticks - g.exitTick;
+            if since < 12 {
+                pixels.DrawRing(exX + 32, exY + 32, 8 + since * 9, Color.Rgba(168, 216, 163, 220 - since * 18));
+                if since > 2 { pixels.DrawRing(exX + 32, exY + 32, since * 6, Color.Rgba(244, 235, 216, 180 - since * 14)); }
+            }
+        }
         for y in 1..rules.H - 1 {
             for x in 1..rules.W - 1 {
                 var tile = g.tile(x, y);
                 if tile >= 2 {
                     var px = BX + x * art.SIZE; var py = BY + y * art.SIZE;
-                    var id = 2; if tile == 3 { id = 11; }
-                    self.sprite(id, px, py);
+                    if tile == 3 { self.sprite(11, px, py); }
+                    else { target.DrawPixels(px, py, bank.crates.get((x * 7 + y * 3) % 3)); }
                     if g.lastDrop == y * rules.W + x && g.ticks - g.lastDropTick < 4 {
                         pixels.DrawFrame(px + 2, py + 2, art.SIZE - 4, art.SIZE - 4, art.PAPER);
                     }
@@ -189,21 +242,42 @@ class View {
         }
         if g.bonus >= 0 {
             var bx = BX + (g.bonus % rules.W) * art.SIZE; var by = BY + (g.bonus / rules.W) * art.SIZE;
-            self.sprite(10, bx, by);
+            target.DrawPixels(bx, by, bank.stars.get(g.ticks % 8));
             pixels.DrawRing(bx + 32, by + 34, 24 + (g.ticks % 8) / 2, Color.Rgba(240, 189, 85, 150 - (g.ticks % 8) * 15));
         }
         for i in 0..g.cats.length() { if g.cats.get(i).alive { self.catSprite(g, i); } }
+        self.trackMouse(g);
         var mx = BX + g.mx * art.SIZE; var my = BY + g.my * art.SIZE;
-        if g.facing == 2 { target.DrawPixels(mx, my, bank.mouseLeft); } else { self.sprite(4, mx, my); }
+        var t = MOUSE_SLIDE; if sliding { t = slideMs; if t > MOUSE_SLIDE { t = MOUSE_SLIDE; } }
+        var drawX = BX + fromX * art.SIZE + (g.mx - fromX) * art.SIZE * t / MOUSE_SLIDE;
+        var drawY = BY + fromY * art.SIZE + (g.my - fromY) * art.SIZE * t / MOUSE_SLIDE;
+        if !sliding { drawX = mx; drawY = my; }
+        var stepFrame = sliding && (t / 30) % 2 == 1;
+        var mouseFrame = bank.sprites.get(4); if stepFrame { mouseFrame = bank.walk.get(0); }
+        if g.facing == 2 { mouseFrame = bank.mouseLeft; if stepFrame { mouseFrame = bank.mouseLeftWalk; } }
+        var hop = 0; if sliding && t > 20 && t < 70 { hop = -3; }
+        target.DrawPixels(drawX, drawY + hop, mouseFrame);
+        if !sliding && g.state == rules.PLAY && (g.ticks + 20) % (BLINK + 6) < 2 {
+            pixels.DrawBox(drawX + 22, drawY + 31, 7, 7, 0xE8E8D9); pixels.DrawBox(drawX + 37, drawY + 31, 7, 7, 0xE8E8D9);
+            pixels.DrawLine(drawX + 22, drawY + 34, drawX + 28, drawY + 34, art.INK); pixels.DrawLine(drawX + 37, drawY + 34, drawX + 43, drawY + 34, art.INK);
+        }
         var ring = art.GREEN;
         if g.state == rules.DEAD || g.state == rules.OVER || g.state == rules.CAUGHT { ring = art.RED; }
         else if (g.ticks / 5) % 2 == 0 { ring = 0x7FB37A; }
         pixels.DrawFrame(mx + 1, my + 1, art.SIZE - 2, art.SIZE - 2, ring);
         if g.state == rules.PLAY && g.grace > 0 {
-            pixels.DrawBox(BX + 500, BY + 8, 280, 44, art.INK);
-            pixels.DrawBox(BX + 496, BY + 4, 280, 44, art.PAPER);
-            self.big(BX + 548, BY + 18, "GET READY", 2, art.INK);
-            pixels.DrawBox(BX + 496, BY + 44, 280 * g.grace / rules.GRACE, 4, art.GOLD);
+            var number = g.room + 1; if number > 10 { number = 10; }
+            var title = "ROOM " + Fmt.Int(number) + "   " + rooms.name(number - 1);
+            var w = 700; var cx = BX + rules.W * art.SIZE / 2;
+            // The card sits over the top rows unless the mouse starts there.
+            var cy = BY + 4; if g.my <= 1 { cy = BY + rules.H * art.SIZE - 100; }
+            pixels.DrawBox(cx - w / 2 + 6, cy + 6, w, 92, art.INK);
+            pixels.DrawBox(cx - w / 2, cy, w, 92, art.PAPER);
+            pixels.DrawBox(cx - w / 2, cy, w, 5, art.GOLD);
+            pixels.DrawTextCenteredScaled(cy + 16, title, art.INK, 2);
+            pixels.DrawTextCentered(cy + 46, rooms.hint(g.room), 0x63756C);
+            pixels.DrawTextCentered(cy + 66, "GET READY", art.INK);
+            pixels.DrawBox(cx - w / 2, cy + 88, w * g.grace / rules.GRACE, 4, art.GOLD);
         }
         if g.state == rules.CAUGHT {
             pixels.DrawBox(BX + 500, BY + 8, 280, 44, art.INK);
@@ -352,6 +426,13 @@ class View {
             self.panel(title, subtitle);
             if g.state == rules.WON { target.DrawPixels(940, 340, bank.heroMouse); } else { target.DrawPixels(1000, 330, bank.heroCat); }
             self.big(260, 372, Fmt.Int(profile.score(g)) + " POINTS", 3, art.INK);
+            if recordRank > 0 {
+                var tag = "NEW RECORD  #" + Fmt.Int(recordRank);
+                if recordRank == 1 { tag = "NEW HIGH SCORE!"; }
+                var tw = pixels.TextScaledWidth(tag, 2) + 24;
+                pixels.DrawBox(1084 - tw, 372, tw, 30, art.GOLD);
+                pixels.DrawTextScaled(1084 - tw + 12, 379, tag, 2, art.INK);
+            }
             self.text(260, 426, "CATS BOXED IN: " + Fmt.Int(g.captures) + "   BONUSES: " + Fmt.Int(g.bonuses), art.INK);
             self.text(260, 455, "TURNS: " + Fmt.Int(g.totalTurns) + "   LIVES LEFT: " + Fmt.Int(g.lives), art.INK);
             self.big(260, 548, "ENTER  HIGH SCORES     ESC  MAIN MENU", 2, art.INK);

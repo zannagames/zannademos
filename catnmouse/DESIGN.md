@@ -29,14 +29,23 @@ respawn, and the exact capture rule were unspecified. The 2026-09 rework moved
 the game from turn-based to real time and settled the following rules:
 
 - A 20 by 11 board (including its outer walls), 64 by 64 pixel cells, cardinal
-  single-cell movement, twelve cheese pieces per room, ten authored rooms, and
+  single-cell movement, twelve cheese pieces per room, ten generated rooms, and
   five lives shared across the Classic campaign.
+- Generated rooms (2026-09-05): `rooms.generate()` places 14 + n .. 18 + n crates
+  (never in a corner, never completing a 2 by 2 solid block), a random start with
+  two free neighbours, then each cat of the room's recipe at least five squares
+  from the start, three from other cats, out of the start's lanes and with enough
+  free neighbours (two for roamers). `rooms.validate()` accepts a room only when
+  every floor cell is one walkable region from the start, the start is covered,
+  no cat is boxed and `crateCount() <= MAX_CRATES` (40). Up to `GEN_ATTEMPTS` (24)
+  tries, then `rooms.repair()` opens boundary crates between regions and rehomes
+  cats; both paths are deterministic from the campaign seed.
 - Real time: `Board.tick()` advances one 100 ms step, driven by the frame clock
   in `main.zia` and explicitly by probes. Menus, pause, help and dialogs never
   tick. The mouse moves only on `Board.step()`, one square per fresh key press;
-  Space still spends a "wait" turn for the statistics only.
+  Space "waits" in place without spending a turn.
 - Only the outer boundary is fixed. Every interior block is a pushable crate;
-  authored crates are brown, cat-dropped crates are pale (tile value 3) and
+  generated crates are brown, cat-dropped crates are pale (tile value 3) and
   behave identically.
 - Grace: `GRACE` (15) ticks at room start, after a respawn/resume and after a
   restart, during which no cat moves or hunts. Room authoring guarantees no cat
@@ -46,20 +55,27 @@ the game from turn-based to real time and settled the following rules:
   `searching`, toggled on random timers (idle 20..50 ticks, searching 15..30).
 - Catch walk: entering or being caught in a hunting cat's lane sets `CAUGHT`,
   locks movement, and walks the killer one square every `CHASE` (3) ticks until
-  it is adjacent (or blocked by a cat/crate), then `lose()` fires and the killer
-  returns to where it spotted the mouse.
+  it is adjacent, then `lose()` fires and the killer returns to where it spotted
+  the mouse. A cat blocking the lane takes over the walk (the first returns home);
+  a crate in the lane ends it.
 - Roaming: stalkers step every 9 ticks and prowlers every 5 on Classic (11/8 Cozy,
   8/4 Fierce) to a random legal neighbour, avoiding an immediate reversal when
   another option exists. Every 14..24 steps a roamer drops a crate on the square it
   just vacated unless that square holds cheese, the bonus, the exit or the mouse,
-  or the drop would leave any adjacent item or the mouse with no free neighbour.
+  the board already holds `MAX_CRATES` crates, or a flood fill from the mouse
+  would no longer reach every remaining cheese, the bonus and the shown exit (or
+  the mouse would lose its last free neighbour).
 - Boxed roamers (four solid sides): captured (+250) once twelve cheese are
-  collected, otherwise they respawn to a random covered floor cell that has no
-  clear lane to the mouse. A roamer with no legal move for three consecutive
-  due moves also respawns. Sentries are never boxed, captured or required for
+  collected, otherwise they respawn to a random covered floor cell with at least
+  two free neighbours and no clear lane to the mouse; if no such cell exists the
+  cat holds for GRACE ticks before trying again (no per-tick spam). A roamer with
+  no legal move for three consecutive due moves also respawns. On a step, cheese
+  is collected before enclosures are judged, so the twelfth cheese and the final
+  push on the same step capture rather than respawn. Sentries are never boxed, captured or required for
   the exit; `liveCats()` counts roamers only, and every room's exit requires
   twelve cheese plus zero surviving roamers (`mustClear` is now HUD-only).
-- Cheese scatters once per room and never moves. One star bonus per room hops to
+- Cheese scatters once per room over cells reachable from the mouse and never moves;
+  bonus hops use the same reachable set. One star bonus per room hops to
   a random eligible cell every `interval` seconds (the old scatter table) until
   collected; it is worth `BONUS_POINTS` (300).
 - The exit is hidden (`ex = ey = -1`) until `exitOpen()`; it is then placed on a
@@ -71,13 +87,26 @@ the game from turn-based to real time and settled the following rules:
   seed; tests and `--seed N` can choose a repeatable seed. VM and native traces
   over interleaved steps and ticks must match.
 - After a death, Enter respawns the mouse on a random floor cell outside every
-  sentry lane with at least one free neighbour, then `respawn()`s every roaming
+  sentry lane with at least one free neighbour and from which every remaining
+  cheese is reachable (any such cell failing, the old rule applies), then `respawn()`s every roaming
   cat (random covered cell with no lane to the mouse, hold = GRACE); sentries
   never move. Crates, collected cheese, the bonus and the turn counter persist.
   Cheese at the refuge is collected on arrival. No refuge ends the campaign.
 - Held movement repeats: one immediate move, a 400 ms pause, then one move every
   100 ms while the key, D-pad or stick direction stays held (`controls.Repeater`).
   Repeat is only produced while the board is live, never in menus or dialogs.
+
+## Presentation (2026-09-05 upgrade)
+
+Presentation state lives outside the simulation: `view.View` owns the mouse slide
+(`advance(dt)`, 90 ms per cell, walk frame swap and hop), the rolling score and
+the record rank; `main.App` owns shake (event 10/4), flash (3/4/9), the room-clear
+wipe (5 into MAP), particles keyed to `Board.eventX/eventY`, and the red vignette
+while CAUGHT. `art.Art` builds walk frames (`generateFrame(id, 1)`), three crate
+variants, eight star rotations, 24 px roster icons, halos and per-theme floors
+(`retheme(theme)` runs only when the room theme changes). PNG-skinned sprites keep
+a single frame. `sound.Audio` switches between the menu tune and the heist loop in
+`configure()` and plays MusicGen stings for room start, death and the exit reveal.
 
 ## Implementation sequence
 
@@ -124,7 +153,7 @@ write failure: `Could not save profile. Changes remain in this session.`
 ## Acceptance tests (Given / When / Then)
 
 - Given a distant cat in the same row/column, when no crate intervenes, then the
-  square is exposed; a diagonal is safe and a single crate (authored or dropped)
+  square is exposed; a diagonal is safe and a single crate (generated or dropped)
   stops it. During grace, or for an idle sentry, an exposed square is not lethal.
 - Given a crate, when pushed toward cheese/bonus/wall/crate/cat/shown exit, then
   neither it nor the mouse moves and no turn is spent; a hidden exit never blocks.
@@ -145,9 +174,15 @@ write failure: `Could not save profile. Changes remain in this session.`
 - Given a death, when Enter continues, then the room remains changed, the
   respawn is covered and grace restarts; zero lives or zero refuge squares end
   the campaign. Restart costs a life, rebuilds the room and re-rolls placement.
-- Given each authored room, when loaded, then boundaries, no interior walls, a
-  covered entrance with grace, twelve pickups, one bonus, a hidden exit and
-  compatible capture objectives validate, and nothing moves during grace.
+- Given each generated room (ten rooms, dozens of seeds), when loaded, then
+  boundaries, no interior walls, one connected floor region, a covered entrance
+  with grace, spaced unboxed cats, the crate range and cap, twelve pickups, one
+  bonus, a hidden exit and compatible capture objectives validate, nothing moves
+  during grace, the same seed reproduces the room, and the zero-attempt repair
+  path yields an equally valid room.
+- Given random play with drops, then the crate count never exceeds the cap, every
+  remaining cheese, the bonus and the shown exit stay reachable after every tick,
+  and a boxed cat with nowhere to go never raises the escape event on consecutive ticks.
 - Given the objective is met, when the exit is revealed, then it lies on a floor
   cell reachable from the mouse; entering it advances to the map; after room
   ten, victory occurs.

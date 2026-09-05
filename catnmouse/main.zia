@@ -49,6 +49,12 @@ class App {
     hide Integer labelX;
     hide Integer labelY;
     hide String labelText;
+    hide Integer shake;
+    hide Integer flash;
+    hide Integer flashColor;
+    hide Integer wipe;
+    hide Integer particleX;
+    hide Integer particleY;
 
     expose func init(seed: Integer, windowSmoke: Boolean) {
         smoke = windowSmoke; frames = 0;
@@ -62,6 +68,7 @@ class App {
         input = new controls.Controls(); audio = new sound.Audio();
         transition = 180; particles = 0; particleKind = 0; animation = 0;
         tickMs = 0; label = 0; labelX = 0; labelY = 0; labelText = "";
+        shake = 0; flash = 0; flashColor = art.PAPER; wipe = 0; particleX = 0; particleY = 0;
         mouseX = Mouse.X(); mouseY = Mouse.Y();
     }
 
@@ -72,7 +79,7 @@ class App {
            flow.mode == session.INITIALS {
             front.draw(flow);
         } else {
-            screen.phase = tickMs;
+            screen.phase = tickMs; screen.recordRank = flow.lastRank;
             screen.draw(flow.game, flow.mode, flow.prefs.lanes, !flow.prefs.music);
             screen.inputHints(input.lastPad, flow.mode, flow.game);
             if flow.prefs.notice != "" {
@@ -97,6 +104,9 @@ class App {
             } else if flow.mode == session.INITIALS {
                 if hit == 100 { redraw = flow.command("enter"); }
                 else { flow.cursor = hit; redraw = true; }
+            } else if flow.mode == session.HELP || flow.mode == session.SURRENDER ||
+                      flow.mode == session.QUIT || flow.mode == session.RESTART {
+                if hit == 101 { redraw = flow.command("escape"); } else { redraw = flow.command("enter"); }
             } else {
                 flow.selected = hit; redraw = flow.command("enter");
             }
@@ -104,9 +114,24 @@ class App {
         return redraw;
     }
 
+    /// @brief Screen-shake offset for this frame, derived from the animation clock (no RNG).
+    hide func jitter(axis: Integer) -> Integer {
+        if shake <= 0 || !flow.prefs.motion { return 0; }
+        var amp = 2 + shake / 120;
+        var n = (animation / 16 + axis * 7) % 4;
+        if n == 0 { return amp; } if n == 1 { return 0 - amp; } if n == 2 { return amp / 2; }
+        return 0 - amp / 2;
+    }
+
     hide func accents(dt: Integer) {
-        if !flow.prefs.motion { transition = 0; particles = 0; return; }
+        if !flow.prefs.motion { transition = 0; particles = 0; shake = 0; flash = 0; wipe = 0; return; }
         animation = (animation + dt) % 4000;
+        if shake > 0 { shake = shake - dt; if shake < 0 { shake = 0; } }
+        if flow.mode == session.GAME && flow.game.state == rules.CAUGHT {
+            var pulse = 70 + ((animation / 40) % 20) * 4;
+            canvas.BoxAlpha(0, 0, view.WIDTH, 40, art.RED, pulse); canvas.BoxAlpha(0, view.HEIGHT - 40, view.WIDTH, 40, art.RED, pulse);
+            canvas.BoxAlpha(0, 40, 28, view.HEIGHT - 80, art.RED, pulse); canvas.BoxAlpha(view.WIDTH - 28, 40, 28, view.HEIGHT - 80, art.RED, pulse);
+        }
         if flow.mode == session.TITLE {
             var step = animation / 160;
             for i in 0..9 {
@@ -119,17 +144,19 @@ class App {
             particles = particles - dt;
             if particles < 0 { particles = 0; }
             var elapsed = 400 - particles;
-            var x = view.BX + flow.game.mx * art.SIZE + art.SIZE / 2;
-            var y = view.BY + flow.game.my * art.SIZE + art.SIZE / 2;
+            var x = view.BX + particleX * art.SIZE + art.SIZE / 2;
+            var y = view.BY + particleY * art.SIZE + art.SIZE / 2;
             var color = art.GOLD;
             if particleKind == 3 { color = 0xB0D6DA; }
             if particleKind == 4 || particleKind == 10 { color = art.RED; }
             if particleKind == 1 || particleKind == 11 { color = 0xC9A97A; }
             if particleKind == 9 || particleKind == 12 { color = art.GREEN; }
-            for i in 0..8 {
-                var ox = ((i % 4) * 2 - 3) * elapsed / 24;
-                var oy = ((i / 4) * 2 - 1) * elapsed / 18;
-                canvas.BoxAlpha(x + ox, y + oy, 4, 4, color, particles * 190 / 400);
+            var count = 8; if particleKind == 2 || particleKind == 8 || particleKind == 13 || particleKind == 3 { count = 12; }
+            for i in 0..count {
+                var ox = ((i % 4) * 2 - 3) * elapsed / 24 + (i / 4) * 3 - 3;
+                var oy = ((i / 4) * 2 - 2) * elapsed / 18 - elapsed * elapsed / 6000;
+                var size = 4; if i % 3 == 0 { size = 6; }
+                canvas.BoxAlpha(x + ox, y + oy, size, size, color, particles * 190 / 400);
             }
         }
         if label > 0 && flow.mode == session.GAME {
@@ -137,6 +164,19 @@ class App {
             var rise = (700 - label) / 14;
             canvas.BoxAlpha(labelX - 4, labelY - rise - 4, 8 * 3 * 4 + 8, 32, art.INK, label * 160 / 700);
             canvas.TextScaled(labelX, labelY - rise, labelText, 3, art.GOLD);
+        }
+        if flash > 0 {
+            flash = flash - dt; if flash < 0 { flash = 0; }
+            canvas.BoxAlpha(0, 0, view.WIDTH, view.HEIGHT, flashColor, flash * 150 / 200);
+        }
+        if wipe > 0 {
+            wipe = wipe - dt; if wipe < 0 { wipe = 0; }
+            // A gold bar sweeps left to right, dragging a night-blue curtain across the board.
+            var progress = (600 - wipe) * view.WIDTH / 600;
+            if wipe > 300 { canvas.Box(0, 0, (600 - wipe) * view.WIDTH / 300, view.HEIGHT, art.NIGHT); }
+            else { canvas.Box(progress, 0, view.WIDTH - progress, view.HEIGHT, art.NIGHT); }
+            var bar = progress; if wipe > 300 { bar = (600 - wipe) * view.WIDTH / 300; }
+            canvas.Box(bar - 6, 0, 12, view.HEIGHT, art.GOLD);
         }
         if transition > 0 {
             transition = transition - dt; if transition < 0 { transition = 0; }
@@ -148,9 +188,18 @@ class App {
     hide func feedback() {
         audio.play(flow.event, flow.prefs.effects);
         var e = flow.event;
-        if e == 1 || (e >= 2 && e <= 4) || e == 8 || e == 9 || e == 10 || e == 11 || e == 12 {
+        if e == 1 || (e >= 2 && e <= 4) || e == 8 || e == 9 || e == 10 || e == 11 || e == 12 || e == 13 {
             particles = 400; particleKind = e;
+            particleX = flow.game.mx; particleY = flow.game.my;
+            if (e == 3 || e == 9 || e == 11 || e == 12 || e == 13) && flow.game.eventX >= 0 {
+                particleX = flow.game.eventX; particleY = flow.game.eventY;
+            }
         }
+        if e == 10 { shake = 260; }
+        if e == 4 { shake = 420; flash = 200; flashColor = art.RED; }
+        if e == 3 { flash = 120; flashColor = art.PAPER; }
+        if e == 9 { flash = 160; flashColor = art.GREEN; }
+        if e == 5 && flow.game.state == rules.MAP { wipe = 600; }
         if e == 2 || e == 8 || e == 3 {
             label = 700; labelText = "+100"; if e == 8 { labelText = "+300"; } if e == 3 { labelText = "+250"; }
             labelX = view.BX + flow.game.mx * art.SIZE - 16; labelY = view.BY + flow.game.my * art.SIZE - 24;
@@ -158,13 +207,24 @@ class App {
         }
     }
 
+    /// @brief A direction the mouse can walk right now (rooms are random, so the smoke asks).
+    hide func freeMove() -> String {
+        var g = flow.game;
+        var names: List[String] = ["right", "down", "left", "up"];
+        for d in 0..4 {
+            var x = g.mx + rules.dx(d); var y = g.my + rules.dy(d);
+            if g.tile(x, y) == 0 && g.catAt(x, y) < 0 { return names.get(d); }
+        }
+        return "wait";
+    }
+
     hide func smokeAction() -> String {
         frames = frames + 1;
         if frames == 12 || frames == 36 || frames == 48 || frames == 60 { return "enter"; }
         if frames == 24 || frames == 100 { return "pause"; }
-        if frames == 30 || frames == 42 || frames == 54 || frames == 90 { return "down"; }
+        if frames == 30 || frames == 42 || frames == 54 { return "down"; }
         if frames == 66 || frames == 72 || frames == 112 { return "escape"; }
-        if frames == 84 { return "right"; }
+        if frames == 84 || frames == 90 { return self.freeMove(); }
         if frames >= 120 {
             if flow.game.turn != 2 || flow.game.state != rules.PLAY || flow.prefs.music || flow.prefs.effects {
                 Terminal.Say("FAIL: window smoke state"); Env.Exit(2);
@@ -191,6 +251,7 @@ class App {
             }
             if redraw { self.feedback(); }
             if !smoke && flow.mode == session.GAME {
+                screen.advance(canvas.DeltaTime);
                 tickMs = tickMs + canvas.DeltaTime;
                 while tickMs >= 100 {
                     tickMs = tickMs - 100;
@@ -203,7 +264,8 @@ class App {
                 self.render();
             }
             audio.configure(flow.prefs.music, canvas.IsFocused(), flow.mode != session.GAME);
-            canvas.Blit(0, 0, screen.pixels);
+            if shake > 0 { canvas.Clear(art.NIGHT); }
+            canvas.Blit(self.jitter(0), self.jitter(1), screen.pixels);
             self.accents(canvas.DeltaTime);
             canvas.Flip();
         }

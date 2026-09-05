@@ -6,6 +6,7 @@
 // Purpose: Validate authored topology and deterministic state across seeded real-time runs.
 // Key invariants:
 //   - Crates never cover cheese, the bonus or the exit; the exit is reachable when shown.
+//   - The crate cap holds at every observed state.
 //   - VM and native execution emit the same state trace for all actions and ticks.
 // Ownership/Lifetime:
 //   - Each run owns a fresh board; flood queues are local to a room check.
@@ -45,6 +46,7 @@ func reachable(g: rules.Board, tx: Integer, ty: Integer) -> Boolean {
 func valid(g: rules.Board) {
     require(g.tile(g.mx, g.my) == 0 && g.catAt(g.mx, g.my) < 0, "mouse occupies floor");
     require(g.collected >= 0 && g.collected <= 12, "collection bounds");
+    require(g.crateCount() <= rules.MAX_CRATES, "crate cap");
     require(g.cheese.length() + g.collected == 12, "cheese conservation in authored rooms");
     for i in 0..g.cats.length() {
         var c = g.cats.get(i);

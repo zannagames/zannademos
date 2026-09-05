@@ -21,7 +21,7 @@ bind "./session";
 bind "./profile";
 bind "./rules";
 
-/// @brief Return an actionable row/tab, or 100 for the screen's back/done button.
+/// @brief Return an actionable row/tab, 100 for a screen's confirm/back button, 101 for cancel.
 expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
     if mode == session.TITLE || mode == session.PAUSE {
         if x >= 72 && x < 502 && y >= 388 && y < 708 {
@@ -31,7 +31,7 @@ expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
     }
     if mode == session.SETTINGS {
         if x >= 72 && x < 792 && y >= 210 && y < 714 {
-            if (y - 210) % 72 < 56 { return (y - 210) / 72; }
+            if (y - 210) % 72 < 52 { return (y - 210) / 72; }
         }
     }
     if mode == session.SCORES {
@@ -45,6 +45,16 @@ expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
             return (x - 440) / 152;
         }
         if x >= 440 && x < 896 && y >= 600 && y < 656 { return 100; }
+    }
+    // Dialog panels: 100 confirms (Enter), 101 cancels (Escape). Text rows are 16 px per glyph.
+    if mode == session.HELP {
+        if x >= 260 && x < 500 && y >= 596 && y < 632 { return 100; }
+    }
+    if mode == session.SURRENDER || mode == session.QUIT || mode == session.RESTART {
+        var split = 556; if mode == session.QUIT { split = 476; } if mode == session.RESTART { split = 524; }
+        if y >= 518 && y < 554 && x >= 260 && x < 900 {
+            if x < split { return 100; } return 101;
+        }
     }
     return -1;
 }
@@ -127,7 +137,7 @@ class Menus {
         self.text(771, 784, "THE HOUSE IS WATCHING. MAKE YOUR MOVE.", art.MUTED);
     }
     hide func mainMenu(s: session.Session) {
-        self.background("VERSION 1.1 / LOCAL");
+        self.background("VERSION " + art.VERSION + " / LOCAL");
         if s.mode == session.PAUSE {
             self.big(72, 166, "IN COVER", 5, art.PAPER);
             self.text(74, 229, "THE ROOM WAITS FOR YOU.", art.GOLD);

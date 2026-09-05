@@ -9,9 +9,11 @@
 //   - Exposure is resolved after every geometry change and after every cat move.
 //   - The exit exists only once all cheese is collected and no roaming cat survives.
 //   - A catch walk (CAUGHT) always ends in DEAD or OVER and restores the killer.
+//   - Crates never exceed MAX_CRATES, and a cat drop never cuts the mouse off from
+//     any remaining cheese, the bonus or the shown exit.
 // Ownership/Lifetime:
 //   - Board owns its tile, cat and pickup lists for one campaign.
-// Links: DESIGN.md, rooms.zia, rules_probe.zia
+// Links: DESIGN.md, rooms.zia, rules_probe.zia, generator_probe.zia
 //===----------------------------------------------------------------------===//
 module rules;
 
@@ -28,6 +30,7 @@ final CHASE = 3;
 final BONUS_POINTS = 300;
 final DROP_MIN = 14;
 final DROP_SPAN = 11;
+final MAX_CRATES = 40;
 
 expose func abs(n: Integer) -> Integer { if n < 0 { return 0 - n; } return n; }
 expose func dx(d: Integer) -> Integer { if d == 0 { return 1; } if d == 2 { return -1; } return 0; }
@@ -92,6 +95,10 @@ class Board {
     expose Integer event;
     expose Boolean mustClear;
     expose String message;
+    /// @brief Board cell of the latest capture, drop, hop or reveal, for effects.
+    expose Integer eventX;
+    expose Integer eventY;
+    expose Integer exitTick;
 
     expose func init() {
         tiles = []; cheese = []; cats = [];
@@ -115,6 +122,7 @@ class Board {
         ticks = 0; grace = GRACE; killer = -1; chaseTimer = 0; facing = 0;
         bonus = -1; lastDrop = -1; lastDropTick = -100;
         state = PLAY; event = 0; mustClear = false; message = "Read the lanes. Keep your cover.";
+        eventX = -1; eventY = -1; exitTick = -100;
     }
 
     expose func tile(x: Integer, y: Integer) -> Integer {
@@ -124,8 +132,16 @@ class Board {
     expose func setTile(x: Integer, y: Integer, value: Integer) {
         if x > 0 && y > 0 && x < W - 1 && y < H - 1 { tiles.set(y * W + x, value); }
     }
+    /// @brief Every crate on the board, authored or dropped.
+    expose func crateCount() -> Integer {
+        var count = 0;
+        for i in 0..tiles.length() { if tiles.get(i) >= 2 { count = count + 1; } }
+        return count;
+    }
     expose func addCat(x: Integer, y: Integer, kind: Integer) {
-        var c = new Cat(x, y, kind); c.nextMove = self.cadence(kind); cats.add(c);
+        var c = new Cat(x, y, kind); c.nextMove = self.cadence(kind);
+        c.movesLeft = DROP_MIN + self.random(DROP_SPAN);
+        cats.add(c);
     }
     expose func catAt(x: Integer, y: Integer) -> Integer {
         for i in 0..cats.length() {
@@ -202,13 +218,13 @@ class Board {
     /// @brief Kept for callers that only care about geometry (lanes overlay uses lethal).
     expose func danger(x: Integer, y: Integer) -> Boolean { return self.lethal(x, y); }
 
-    hide func random(bound: Integer) -> Integer {
+    expose func random(bound: Integer) -> Integer {
         seed = seed % 2147483647;
         if seed <= 0 { seed = 1 - seed; }
         seed = (seed * 48271) % 2147483647;
         return seed % bound;
     }
-    hide func freeNeighbors(x: Integer, y: Integer, skipX: Integer, skipY: Integer) -> Integer {
+    expose func freeNeighbors(x: Integer, y: Integer, skipX: Integer, skipY: Integer) -> Integer {
         var count = 0;
         for d in 0..4 {
             var nx = x + dx(d); var ny = y + dy(d);
@@ -216,11 +232,49 @@ class Board {
         }
         return count;
     }
+
+    /// @brief Floor-only breadth-first reach from a cell: one flag per board cell (1 = reachable).
+    expose func flood(x0: Integer, y0: Integer) -> List[Integer] {
+        var seen: List[Integer] = [];
+        while seen.length() < W * H { seen.add(0); }
+        if self.tile(x0, y0) != 0 { return seen; }
+        var queue: List[Integer] = [y0 * W + x0];
+        seen.set(queue.get(0), 1); var head = 0;
+        while head < queue.length() {
+            var pos = queue.get(head); head = head + 1;
+            var x = pos % W; var y = pos / W;
+            for d in 0..4 {
+                var nx = x + dx(d); var ny = y + dy(d);
+                if self.tile(nx, ny) == 0 {
+                    var next = ny * W + nx;
+                    if seen.get(next) == 0 { seen.set(next, 1); queue.add(next); }
+                }
+            }
+        }
+        return seen;
+    }
+    /// @brief True when every remaining cheese, the bonus and the shown exit are flagged reachable.
+    expose func reachesAll(seen: List[Integer]) -> Boolean {
+        for i in 0..cheese.length() { if seen.get(cheese.get(i)) == 0 { return false; } }
+        if bonus >= 0 && seen.get(bonus) == 0 { return false; }
+        if exitShown && seen.get(ey * W + ex) == 0 { return false; }
+        return true;
+    }
+    /// @brief True when every floor cell can be walked to from the mouse without pushing.
+    expose func connected() -> Boolean {
+        var seen = self.flood(mx, my);
+        for i in 0..tiles.length() { if tiles.get(i) == 0 && seen.get(i) == 0 { return false; } }
+        return true;
+    }
+    /// @brief Free, unreserved, cat-free floor cells the mouse can walk to.
     hide func eligible() -> List[Integer] {
         var cells: List[Integer] = [];
+        var seen = self.flood(mx, my);
         for y in 1..H - 1 {
             for x in 1..W - 1 {
-                if self.tile(x, y) == 0 && self.catAt(x, y) < 0 && !self.reserved(x, y) { cells.add(y * W + x); }
+                if self.tile(x, y) == 0 && seen.get(y * W + x) == 1 && self.catAt(x, y) < 0 && !self.reserved(x, y) {
+                    cells.add(y * W + x);
+                }
             }
         }
         return cells;
@@ -244,6 +298,7 @@ class Board {
 
     /// @brief Place (or teleport) the room bonus and restart its countdown.
     expose func placeBonus() {
+        if bonus >= 0 { eventX = bonus % W; eventY = bonus / W; }
         bonus = -1;
         var cells = self.eligible();
         if cells.length() > 0 { bonus = cells.get(self.random(cells.length())); }
@@ -252,52 +307,45 @@ class Board {
 
     /// @brief Choose a floor cell reachable from the mouse for the exit and show it.
     expose func revealExit() {
-        var seen: List[Integer] = [];
-        while seen.length() < W * H { seen.add(0); }
-        var queue: List[Integer] = [my * W + mx];
-        seen.set(queue.get(0), 1); var head = 0;
+        var seen = self.flood(mx, my);
         var far: List[Integer] = []; var near: List[Integer] = [];
-        while head < queue.length() {
-            var pos = queue.get(head); head = head + 1;
-            var x = pos % W; var y = pos / W;
-            if self.catAt(x, y) < 0 && !self.reserved(x, y) {
-                if abs(x - mx) + abs(y - my) >= 4 { far.add(pos); } else { near.add(pos); }
-            }
-            for d in 0..4 {
-                var nx = x + dx(d); var ny = y + dy(d);
-                if self.tile(nx, ny) == 0 {
-                    var next = ny * W + nx;
-                    if seen.get(next) == 0 { seen.set(next, 1); queue.add(next); }
+        for y in 1..H - 1 {
+            for x in 1..W - 1 {
+                var pos = y * W + x;
+                if seen.get(pos) == 1 && self.catAt(x, y) < 0 && !self.reserved(x, y) {
+                    if abs(x - mx) + abs(y - my) >= 4 { far.add(pos); } else { near.add(pos); }
                 }
             }
         }
         var cells = far; if cells.length() == 0 { cells = near; }
-        if cells.length() == 0 { cells = self.eligible(); }
         if cells.length() == 0 { ex = mx; ey = my; }
         else { var pos = cells.get(self.random(cells.length())); ex = pos % W; ey = pos / W; }
-        exitShown = true; event = 9;
+        exitShown = true; event = 9; exitTick = ticks; eventX = ex; eventY = ey;
         message = "The exit has appeared. Head for the green arch.";
     }
 
     /// @brief Move a cat to a random covered cell that cannot see the mouse, with a hold delay.
-    expose func respawn(i: Integer) {
+    /// Returns false (and throttles the retry) when no such cell exists.
+    expose func respawn(i: Integer) -> Boolean {
         var c = cats.get(i);
         var cells: List[Integer] = [];
         for y in 1..H - 1 {
             for x in 1..W - 1 {
                 if self.tile(x, y) == 0 && self.catAt(x, y) < 0 && !self.reserved(x, y) &&
-                   !self.clear(x, y, mx, my) && self.freeNeighbors(x, y, -1, -1) > 0 {
+                   !self.clear(x, y, mx, my) && self.freeNeighbors(x, y, -1, -1) >= 2 {
                     cells.add(y * W + x);
                 }
             }
         }
-        if cells.length() == 0 { return; }
+        if cells.length() == 0 { c.hold = GRACE; return false; }
         var pos = cells.get(self.random(cells.length()));
         c.x = pos % W; c.y = pos / W; c.px = c.x; c.py = c.y; c.movedTick = ticks;
+        c.homeX = c.x; c.homeY = c.y;
         c.hold = GRACE; c.stuck = 0; c.heading = -1; c.nextMove = self.cadence(c.kind);
         c.movesLeft = DROP_MIN + self.random(DROP_SPAN);
-        if event < 12 { event = 12; }
+        if event < 12 { event = 12; eventX = c.x; eventY = c.y; }
         message = "The cat found another way in.";
+        return true;
     }
 
     /// @brief A roaming cat enclosed on four sides: captured once the cheese is done, otherwise it escapes.
@@ -306,21 +354,25 @@ class Board {
         if !c.alive || c.kind == 0 { return; }
         for d in 0..4 { if self.tile(c.x + dx(d), c.y + dy(d)) == 0 { return; } }
         if collected == 12 {
-            c.alive = false; captures = captures + 1; event = 3;
+            c.alive = false; captures = captures + 1; event = 3; eventX = c.x; eventY = c.y;
             message = "Boxed in! One fewer cat.";
-        } else { self.respawn(i); }
+        } else { var _ = self.respawn(i); }
     }
     expose func capture() { for i in 0..cats.length() { self.boxed(i); } }
 
-    /// @brief Drop a crate on a vacated cell unless it would cover or seal an item or the mouse.
-    hide func drop(x: Integer, y: Integer) {
-        if self.tile(x, y) != 0 || self.catAt(x, y) >= 0 || self.reserved(x, y) { return; }
-        for d in 0..4 {
-            var nx = x + dx(d); var ny = y + dy(d);
-            if self.tile(nx, ny) == 0 && self.reserved(nx, ny) && self.freeNeighbors(nx, ny, x, y) == 0 { return; }
+    /// @brief Drop a crate on a vacated cell unless the cap is reached or it would cut the
+    /// mouse off from any remaining cheese, the bonus, the shown exit or every neighbour.
+    expose func drop(x: Integer, y: Integer) -> Boolean {
+        if self.tile(x, y) != 0 || self.catAt(x, y) >= 0 || self.reserved(x, y) { return false; }
+        if self.crateCount() >= MAX_CRATES { return false; }
+        self.setTile(x, y, 3);
+        var seen = self.flood(mx, my);
+        if !self.reachesAll(seen) || self.freeNeighbors(mx, my, -1, -1) == 0 {
+            self.setTile(x, y, 0); return false;
         }
-        self.setTile(x, y, 3); lastDrop = y * W + x; lastDropTick = ticks;
+        lastDrop = y * W + x; lastDropTick = ticks; eventX = x; eventY = y;
         if event < 11 { event = 11; }
+        return true;
     }
 
     expose func lose() {
@@ -361,14 +413,21 @@ class Board {
     }
 
     /// @brief Resume after a death: the mouse and every roaming cat reappear somewhere random.
-    /// Crates, cheese, the bonus, sentries and timers are untouched.
+    /// Crates, cheese, the bonus, sentries and timers are untouched. The refuge is chosen so
+    /// every remaining cheese stays reachable whenever such a cell exists.
     expose func resume() {
         if state != DEAD { return; }
+        var region: List[Integer] = [];
+        if cheese.length() > 0 {
+            region = self.flood(cheese.get(0) % W, cheese.get(0) / W);
+            if !self.reachesAll(region) { region = []; }
+        }
         var cells: List[Integer] = [];
         for y in 1..H - 1 {
             for x in 1..W - 1 {
                 if self.tile(x, y) == 0 && self.catAt(x, y) < 0 && !self.bonusAt(x, y) &&
-                   !self.isExit(x, y) && !self.sentryLane(x, y) && self.freeNeighbors(x, y, -1, -1) > 0 {
+                   !self.isExit(x, y) && !self.sentryLane(x, y) && self.freeNeighbors(x, y, -1, -1) > 0 &&
+                   (region.length() == 0 || region.get(y * W + x) == 1) {
                     cells.add(y * W + x);
                 }
             }
@@ -385,7 +444,7 @@ class Board {
         mx = pos % W; my = pos / W;
         for i in 0..cats.length() {
             var c = cats.get(i);
-            if c.alive && c.kind != 0 { self.respawn(i); }
+            if c.alive && c.kind != 0 { var _ = self.respawn(i); }
         }
         state = PLAY; event = 0; grace = GRACE;
         message = "New hiding spot. The cats have scattered too.";
@@ -416,7 +475,7 @@ class Board {
         c.nextMove = self.cadence(c.kind);
         if options.length() == 0 {
             c.stuck = c.stuck + 1;
-            if c.stuck >= 3 { self.respawn(i); }
+            if c.stuck >= 3 { var _ = self.respawn(i); }
             return;
         }
         c.stuck = 0;
@@ -425,12 +484,13 @@ class Board {
         c.movedTick = ticks; c.heading = d;
         c.movesLeft = c.movesLeft - 1;
         if c.movesLeft <= 0 {
-            self.drop(c.px, c.py);
+            var _ = self.drop(c.px, c.py);
             c.movesLeft = DROP_MIN + self.random(DROP_SPAN);
             self.capture();
         }
     }
 
+    /// @brief One catch-walk beat. A cat blocking the lane takes over the walk; a crate ends it.
     hide func chase() {
         var c = cats.get(killer);
         chaseTimer = chaseTimer - 1;
@@ -440,7 +500,18 @@ class Board {
         if mx > c.x { sx = 1; } if mx < c.x { sx = -1; }
         if my > c.y { sy = 1; } if my < c.y { sy = -1; }
         var nx = c.x + sx; var ny = c.y + sy;
-        if (nx == mx && ny == my) || self.tile(nx, ny) != 0 || self.catAt(nx, ny) >= 0 {
+        if nx == mx && ny == my {
+            c.x = c.homeX; c.y = c.homeY; c.px = c.x; c.py = c.y; c.movedTick = -100;
+            killer = -1; self.lose(); return;
+        }
+        var other = self.catAt(nx, ny);
+        if other >= 0 {
+            c.x = c.homeX; c.y = c.homeY; c.px = c.x; c.py = c.y; c.movedTick = -100;
+            var next = cats.get(other);
+            next.homeX = next.x; next.homeY = next.y; killer = other; event = 10;
+            return;
+        }
+        if self.tile(nx, ny) != 0 {
             c.x = c.homeX; c.y = c.homeY; c.px = c.x; c.py = c.y; c.movedTick = -100;
             killer = -1; self.lose(); return;
         }
@@ -484,6 +555,7 @@ class Board {
     }
 
     /// @brief Resolve one player action (move, push or wait), stopping at a lethal transition.
+    /// Waiting spends no turn: it only re-evaluates pickups and enclosures.
     expose func step(sx: Integer, sy: Integer) -> Boolean {
         event = 0;
         if state != PLAY || abs(sx) + abs(sy) > 1 { return false; }
@@ -499,10 +571,11 @@ class Board {
             }
             self.setTile(x, y, 0); self.setTile(bx, by, v); event = 1;
         }
-        mx = x; my = y; turn = turn + 1; totalTurns = totalTurns + 1;
+        if sx != 0 || sy != 0 { turn = turn + 1; totalTurns = totalTurns + 1; }
+        mx = x; my = y;
         message = "Read the lanes. Keep your cover.";
-        self.capture();
         self.collect();
+        self.capture();
         if self.checkExposure() { return true; }
         if !exitShown && self.exitOpen() { self.revealExit(); }
         if self.isExit(mx, my) {
