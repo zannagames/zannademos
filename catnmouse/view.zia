@@ -1,0 +1,232 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/view.zia
+// Purpose: Render gameplay and every campaign screen into a headless-safe target.
+// Key invariants:
+//   - The full board is visible; rendering never mutates simulation state.
+//   - Danger markers use the same sightline query as the lethal rule.
+// Ownership/Lifetime:
+//   - View owns its render target and cached sprite bank for the application.
+// Links: art.zia, rules.zia, rooms.zia, main.zia
+//===----------------------------------------------------------------------===//
+module view;
+bind Zanna.Graphics;
+bind Zanna.Text.Fmt as Fmt;
+bind "./art";
+bind "./rules";
+bind "./rooms";
+bind "./profile";
+
+final WIDTH = 1344;
+final HEIGHT = 872;
+final BX = 32;
+final BY = 96;
+final FOOT = BY + rules.H * art.SIZE + 24;
+
+class View {
+    expose RenderTarget2D target;
+    expose Pixels pixels;
+    expose art.Art bank;
+
+    expose func init() {
+        target = RenderTarget2D.New(WIDTH, HEIGHT);
+        pixels = target.Pixels as Pixels;
+        bank = new art.Art();
+    }
+
+    hide func text(x: Integer, y: Integer, s: String, color: Integer) { pixels.DrawText(x, y, s, color); }
+    hide func big(x: Integer, y: Integer, s: String, scale: Integer, color: Integer) {
+        pixels.DrawTextScaled(x, y, s, scale, color);
+    }
+    hide func sprite(id: Integer, x: Integer, y: Integer) { target.DrawPixels(x, y, bank.sprites.get(id)); }
+    hide func header(g: rules.Board) {
+        pixels.FillColor(art.PAPER);
+        pixels.DrawBox(0, 0, WIDTH, 8, art.INK);
+        self.big(32, 22, "CAT 'N' MOUSE", 3, art.INK);
+        self.text(34, 57, profile.difficultyName(g.difficulty) + " / SCORE " + Fmt.Int(profile.score(g)), 0x63756C);
+        self.text(34, 77, "AMBER FIXED / BLUE " + Fmt.Int(g.cadence(1)) + "T / VIOLET " + Fmt.Int(g.cadence(2)) + "T", 0x63756C);
+        var number = g.room + 1; if number > 10 { number = 10; }
+        self.text(432, 22, "ROOM " + Fmt.Int(number) + " / 10", 0x63756C);
+        self.big(432, 41, rooms.name(number - 1), 2, art.INK);
+        var contract = "12 CHEESE";
+        if g.mustClear { contract = "12 CHEESE + ALL CATS"; }
+        if g.exitOpen() { contract = "EXIT OPEN - FIND THE ARCH"; }
+        self.text(432, 72, contract, art.INK);
+        self.text(760, 22, "CHEESE", 0x63756C);
+        self.big(760, 40, Fmt.Int(g.collected) + "/12", 3, art.INK);
+        for i in 0..12 {
+            var color = 0xCEC7B5; if i < g.collected { color = 0xC58B37; }
+            pixels.DrawBox(760 + i * 12, 76, 9, 5, color);
+        }
+        self.text(940, 22, "LIVES", 0x63756C);
+        for i in 0..g.maxLives {
+            var color = 0xCEC7B5; if i < g.lives { color = art.INK; }
+            var x = 949 + i * 22;
+            pixels.DrawDisc(x - 4, 45, 4, color); pixels.DrawDisc(x + 4, 45, 4, color);
+            pixels.DrawEllipse(x, 52, 6, 7, color);
+        }
+        self.text(940, 73, "CATS LEFT: " + Fmt.Int(g.liveCats()), art.INK);
+        self.text(1130, 22, "NEXT SCATTER", 0x63756C);
+        var countdown = Fmt.Int(g.countdown) + " TURNS";
+        if g.collected == 12 { countdown = "SECURED"; }
+        self.big(1130, 42, countdown, 2, art.INK);
+        pixels.DrawBox(1130, 76, 178, 5, 0xCEC7B5);
+        if g.collected < 12 { pixels.DrawBox(1130, 76, 178 * g.countdown / g.interval, 5, 0xC58B37); }
+    }
+
+    hide func board(g: rules.Board, lanes: Boolean) {
+        pixels.DrawBox(BX - 5, BY - 5, rules.W * art.SIZE + 10, rules.H * art.SIZE + 10, 0xC6BFA9);
+        for y in 0..rules.H {
+            for x in 0..rules.W {
+                var px = BX + x * art.SIZE; var py = BY + y * art.SIZE;
+                self.sprite(0, px, py);
+                var tile = g.tile(x, y);
+                if tile != 0 { self.sprite(tile, px, py); }
+                if tile == 0 && lanes && g.danger(x, y) {
+                    pixels.DrawFrame(px + 4, py + 4, art.SIZE - 8, art.SIZE - 8, 0x895D53);
+                    pixels.DrawDisc(px + art.SIZE / 2, py + art.SIZE / 2, 3, art.RED);
+                }
+            }
+        }
+        var exitId = 8; if g.exitOpen() { exitId = 9; }
+        self.sprite(exitId, BX + g.ex * art.SIZE, BY + g.ey * art.SIZE);
+        for i in 0..g.cheese.length() {
+            var pos = g.cheese.get(i);
+            self.sprite(3, BX + (pos % rules.W) * art.SIZE, BY + (pos / rules.W) * art.SIZE);
+        }
+        for i in 0..g.cats.length() {
+            var c = g.cats.get(i);
+            if c.alive {
+                var px = BX + c.x * art.SIZE; var py = BY + c.y * art.SIZE;
+                self.sprite(5 + c.kind, px, py);
+                // Cats may occupy cheese; keep the pickup visible as a gold badge.
+                if g.cheeseAt(c.x, c.y) >= 0 {
+                    pixels.DrawBox(px + 50, py + 1, 13, 13, art.INK);
+                    pixels.DrawTriangle(px + 52, py + 6, px + 60, py + 3, px + 60, py + 11, art.GOLD);
+                }
+                // One or two pips describe the number of turns until movement.
+                if c.kind != 0 {
+                    for pip in 0..g.nextMove(c.kind) {
+                        pixels.DrawBox(px + 24 + pip * 8, py + 60, 4, 3, art.PAPER);
+                    }
+                }
+            }
+        }
+        var mx = BX + g.mx * art.SIZE; var my = BY + g.my * art.SIZE;
+        self.sprite(4, mx, my);
+        var ring = 0xA8D8A3;
+        if g.state == rules.DEAD || g.state == rules.OVER { ring = art.RED; }
+        pixels.DrawFrame(mx + 1, my + 1, art.SIZE - 2, art.SIZE - 2, ring);
+    }
+
+    hide func footer(g: rules.Board, lanes: Boolean, muted: Boolean) {
+        self.text(33, FOOT, g.message, art.INK);
+        self.text(33, FOOT + 27, "ARROWS/WASD  MOVE + PUSH    SPACE  WAIT    P  PAUSE    H  HELP    R  SURRENDER", 0x63756C);
+        var laneText = "L  LANES ON"; if !lanes { laneText = "L  LANES OFF"; }
+        var soundText = "M  MUSIC ON"; if muted { soundText = "M  MUSIC OFF"; }
+        self.text(1040, FOOT, laneText, art.INK); self.text(1184, FOOT, soundText, art.INK);
+        self.text(1040, FOOT + 27, "TURN " + Fmt.Int(g.turn), 0x63756C);
+    }
+
+    /// @brief Device-specific hints without covering any board cell.
+    expose func inputHints(pad: Boolean, mode: Integer, g: rules.Board) {
+        pixels.DrawBox(32, FOOT + 23, 1000, 22, art.PAPER);
+        var hint = "ARROWS/WASD MOVE   SPACE WAIT   P/ESC PAUSE   H HELP   R SURRENDER   N SFX";
+        if pad { hint = "D-PAD/STICK MOVE   X WAIT   START/B PAUSE   Y LANES   RB SURRENDER"; }
+        if mode != 0 || g.state != rules.PLAY {
+            hint = "ENTER CONFIRM / CONTINUE     ESC BACK";
+            if pad { hint = "A CONFIRM / CONTINUE     B BACK"; }
+        }
+        self.text(33, FOOT + 27, hint, 0x63756C);
+    }
+
+    hide func panel(title: String, subtitle: String) {
+        pixels.DrawBox(228, 226, 904, 436, 0x0E2529);
+        pixels.DrawBox(220, 218, 904, 436, art.PAPER);
+        pixels.DrawFrame(230, 228, 884, 416, 0xBEBAA2);
+        self.big(260, 257, title, 3, art.INK);
+        self.text(260, 302, subtitle, 0x63756C);
+    }
+
+    hide func mapScreen(g: rules.Board) {
+        pixels.DrawBox(32, BY, WIDTH - 64, rules.H * art.SIZE, art.INK);
+        self.big(72, 160, "THE HOUSE, ONE ROOM AT A TIME", 3, art.PAPER);
+        self.text(74, 205, "ROOM SECURED. THE HEIST CONTINUES UPSTAIRS.", art.GOLD);
+        for n in 0..10 {
+            var col = n % 5; var row = n / 5;
+            if row == 1 { col = 4 - col; }
+            var x = 74 + col * 240; var y = 257 + row * 170;
+            var color = 0x365452;
+            if n < g.room { color = 0x688C74; }
+            if n == g.room { color = art.GOLD; }
+            if n < 9 {
+                if n == 4 { pixels.DrawLine(x + 95, y + 70, x + 95, y + 170, 0x648479); }
+                else if row == 0 { pixels.DrawLine(x + 190, y + 35, x + 240, y + 35, 0x648479); }
+                else { pixels.DrawLine(x, y + 35, x - 50, y + 35, 0x648479); }
+            }
+            pixels.DrawBox(x, y, 190, 70, color);
+            self.big(x + 15, y + 20, Fmt.Int(n + 1), 3, art.INK);
+            if n < g.room { self.text(x + 66, y + 29, "CLEAR", art.INK); }
+            if n == g.room { self.text(x + 66, y + 29, "NEXT", art.INK); }
+            self.text(x, y + 82, rooms.name(n), art.PAPER);
+        }
+        self.text(74, 595, rooms.hint(g.room), art.PAPER);
+        self.big(74, 658, "ENTER  NEXT ROOM", 2, art.GOLD);
+        self.text(980, 665, Fmt.Int(g.lives) + " LIVES REMAIN", art.PAPER);
+    }
+
+    /// @brief Gameplay, map, help, confirmation and ending screens; menus.zia owns the front end.
+    expose func draw(g: rules.Board, mode: Integer, lanes: Boolean, muted: Boolean) {
+        self.header(g); self.board(g, lanes); self.footer(g, lanes, muted);
+        if mode == 3 {
+            self.panel("THE ART OF STAYING HIDDEN", "One keypress is one turn. You have all the time you need to think.");
+            self.text(260, 345, "ARROWS / WASD   Move one square. Walk into a crate to push it.", art.INK);
+            self.text(260, 371, "SPACE           Wait a turn. Cats and the scatter clock still advance.", art.INK);
+            self.text(260, 410, "Cats see along rows and columns. Walls and crates stop their gaze.", art.INK);
+            self.text(260, 434, "Blue and violet cats move on the rhythm of their pips.", art.INK);
+            self.text(260, 458, "Box a moving cat on FOUR sides with walls/crates to remove it.", art.INK);
+            self.text(260, 482, "At least one side must be a crate. Amber sentries cannot be removed.", art.INK);
+            self.text(260, 506, "Cheese scatters on the countdown. Collected cheese is yours for good.", art.INK);
+            self.text(260, 530, "Deaths cost a life. The room stays changed. R offers a costly escape.", art.INK);
+            self.text(260, 566, "L  lanes     M  music     N  sound effects     P / ESC  pause", 0x63756C);
+            self.big(260, 602, "ENTER / H  BACK", 2, art.INK); return;
+        }
+        if mode == 4 || mode == 5 {
+            var title = "LEAVE THE HEIST?";
+            if mode == 4 { title = "LEAVE THIS HIDING SPOT?"; }
+            if mode == 5 { title = "LEAVE THE HEIST?"; }
+            self.panel(title, "The board is paused. No cats move and no cheese scatters.");
+            if mode == 4 {
+                self.text(260, 387, "Surrender costs ONE LIFE and returns you to the nearest safe refuge.", art.INK);
+                self.text(260, 421, "Crates, cheese and cats stay exactly as they are. There is no undo.", art.INK);
+                self.big(260, 524, "ENTER  SURRENDER     ESC  CANCEL", 2, art.INK);
+            } else {
+                self.text(260, 387, "Leaving ends this run. There is no saved checkpoint.", art.INK);
+                self.big(260, 524, "ENTER  QUIT     ESC  KEEP PLAYING", 2, art.INK);
+            }
+            return;
+        }
+        if g.state == rules.MAP { self.mapScreen(g); }
+        if g.state == rules.DEAD {
+            self.panel("CAUGHT IN A CLEAR LANE", "You lost a life. The changed room stays exactly as you left it.");
+            self.big(260, 375, Fmt.Int(g.lives) + " LIVES LEFT", 3, art.INK);
+            self.text(260, 438, "Look at the position before you return. Cover is your only weapon.", art.INK);
+            self.big(260, 543, "ENTER  RETURN TO COVER", 2, art.INK);
+        }
+        if g.state == rules.OVER || g.state == rules.WON {
+            var title = "THE HOUSE WINS THIS TIME";
+            var subtitle = g.message;
+            if g.state == rules.WON {
+                title = "THE MIDNIGHT FEAST IS YOURS";
+                subtitle = "Ten rooms cleared. One very well-fed mouse. Not a single weapon.";
+            }
+            self.panel(title, subtitle);
+            self.big(260, 372, Fmt.Int(profile.score(g)) + " POINTS", 3, art.INK);
+            self.text(260, 426, "CATS BOXED IN: " + Fmt.Int(g.captures), art.INK);
+            self.text(260, 455, "TURNS: " + Fmt.Int(g.totalTurns) + "   LIVES LEFT: " + Fmt.Int(g.lives), art.INK);
+            self.big(260, 548, "ENTER  HIGH SCORES     ESC  MAIN MENU", 2, art.INK);
+        }
+    }
+}

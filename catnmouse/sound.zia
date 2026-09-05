@@ -1,0 +1,88 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/sound.zia
+// Purpose: Synthesize a looping heist soundtrack and independent UI/game effects.
+// Key invariants:
+//   - Missing audio support or devices never prevent playing the game.
+//   - Music and effects have independent switches; focus loss silences music.
+// Ownership/Lifetime:
+//   - Audio owns one song, one sound bank, and the song's looping voice.
+// Links: main.zia, profile.zia, docs/zannalib/audio.md
+//===----------------------------------------------------------------------===//
+module sound;
+bind Zanna.Audio;
+
+func note(song: MusicGen, channel: Integer, at: Integer, pitch: Integer, duration: Integer) {
+    var _ = song.AddNote(channel, at, pitch, duration);
+}
+
+/// @brief An original eight-bar, swung minor-key chiptune, generated once.
+func buildMusic() -> Sound {
+    var song = MusicGen.New(108);
+    var lead = song.AddChannel(0); var bass = song.AddChannel(3); var pluck = song.AddChannel(1);
+    song.SetEnvelope(lead, 3, 110, 16, 140); song.SetChannelVolume(lead, 48); song.SetPan(lead, -15);
+    song.SetEnvelope(bass, 4, 90, 35, 90); song.SetChannelVolume(bass, 32);
+    song.SetEnvelope(pluck, 2, 55, 8, 50); song.SetChannelVolume(pluck, 15);
+    song.SetDuty(pluck, 20); song.SetPan(pluck, 22); song.SetSwing(16);
+    var roots: List[Integer] = [45, 45, 50, 50, 53, 50, 52, 52];
+    var melody: List[Integer] = [69, 72, 76, 72, 74, 72, 69, 67,
+        74, 77, 81, 77, 76, 74, 72, 69, 77, 81, 84, 81,
+        77, 74, 72, 69, 76, 80, 83, 80, 76, 74, 71, 68];
+    for bar in 0..8 {
+        var root = roots.get(bar); var at = bar * 400;
+        note(song, bass, at, root, 125); note(song, bass, at + 200, root + 7, 125);
+        for beat in 0..4 {
+            note(song, lead, at + beat * 100, melody.get(bar * 4 + beat), 65);
+            note(song, pluck, at + beat * 100 + 50, root + 24, 25);
+        }
+    }
+    song.Length = 3200; song.SetLoopable(true); return song.Build();
+}
+
+class Audio {
+    hide SoundBank bank;
+    hide Sound music;
+    hide Integer voice;
+    expose Boolean ready;
+
+    expose func init() {
+        voice = -1; ready = false; music = null; bank = null;
+        if !Mixer.IsAvailable() || Mixer.Init() == 0 { return; }
+        bank = SoundBank.New();
+        self.register("push", Synth.Sweep(150, 80, 80, 3));
+        self.register("cheese", Synth.Sweep(780, 1400, 100, 0));
+        self.register("capture", Synth.Sweep(380, 1500, 200, 1));
+        self.register("death", Synth.Sweep(540, 100, 300, 2));
+        self.register("clear", Synth.Sweep(600, 1800, 280, 0));
+        self.register("menu", Synth.Tone(700, 35, 3));
+        self.register("blocked", Synth.Tone(120, 60, 3));
+        music = buildMusic(); ready = true;
+    }
+    hide func register(name: String, effect: Sound) {
+        if effect != null { var _ = bank.RegisterSound(name, effect); }
+    }
+    expose func configure(enabled: Boolean, focused: Boolean, paused: Boolean) {
+        if !ready || music == null { return; }
+        if !enabled { if voice > 0 { Voice.Stop(voice); voice = -1; } return; }
+        var volume = 25;
+        if paused { volume = 16; } if !focused { volume = 0; }
+        if voice < 0 { voice = music.PlayLoopGroup(volume, 0, 0); }
+        else { Voice.SetVolume(voice, volume); }
+    }
+    expose func play(event: Integer, enabled: Boolean) {
+        if !ready || !enabled { return; }
+        var name = "";
+        if event == 1 { name = "push"; } if event == 2 { name = "cheese"; }
+        if event == 3 { name = "capture"; } if event == 4 { name = "death"; }
+        if event == 5 { name = "clear"; } if event == 6 { name = "menu"; }
+        if event == 7 { name = "blocked"; }
+        if name != "" { var _ = bank.Play(name, 42, 0); }
+    }
+    expose func shutdown() {
+        if !ready { return; }
+        if voice > 0 { Voice.Stop(voice); }
+        bank.Clear(); Mixer.StopAllSounds(); Mixer.Shutdown(); ready = false;
+    }
+}

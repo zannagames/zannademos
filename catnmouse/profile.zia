@@ -1,0 +1,141 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/profile.zia
+// Purpose: Persist preferences and ten local high scores per difficulty.
+// Key invariants:
+//   - Loaded values are validated; failed writes preserve in-memory progress.
+//   - Leaderboards separate difficulty levels and keep stable score ordering.
+// Ownership/Lifetime:
+//   - Profile owns its SaveData and score records for the application lifetime.
+// Links: session.zia, profile_probe.zia, docs/zannalib/game/persistence.md
+//===----------------------------------------------------------------------===//
+module profile;
+bind Zanna.IO.SaveData as SaveData;
+bind Zanna.Text.Fmt as Fmt;
+bind Zanna.String as Str;
+bind "./rules";
+
+expose func difficultyName(n: Integer) -> String {
+    if n == 0 { return "COZY"; } if n == 2 { return "FIERCE"; } return "CLASSIC";
+}
+expose func clamp(n: Integer, low: Integer, high: Integer) -> Integer {
+    if n < low { return low; } if n > high { return high; } return n;
+}
+expose func flag(b: Boolean) -> Integer { if b { return 1; } return 0; }
+expose func initials(s: String) -> String {
+    if Str.get_Length(s) != 3 { return "MOU"; }
+    for i in 0..3 {
+        var c = Str.ByteAt(s, i);
+        if c < 65 || c > 90 { return "MOU"; }
+    }
+    return s;
+}
+expose func score(g: rules.Board) -> Integer {
+    var cheese = g.room * 12 + g.collected;
+    if g.state == rules.MAP || g.state == rules.WON { cheese = g.room * 12; }
+    var value = cheese * 100 + g.room * 1000 + g.captures * 250 - g.totalTurns * 2;
+    if g.state == rules.WON { value = value + 5000 + g.lives * 500; }
+    if value < 0 { return 0; } return value;
+}
+
+class Record {
+    expose String name;
+    expose Integer points;
+    expose Integer rooms;
+    expose Integer turns;
+    expose Integer difficulty;
+    expose Boolean won;
+    expose func init(tag: String, value: Integer, cleared: Integer, steps: Integer, level: Integer, victory: Boolean) {
+        name = initials(tag); points = value; rooms = cleared; turns = steps;
+        difficulty = level; won = victory;
+    }
+}
+
+class Profile {
+    expose SaveData store;
+    expose List[Record] records;
+    expose Integer difficulty;
+    expose Boolean music;
+    expose Boolean effects;
+    expose Boolean lanes;
+    expose Boolean motion;
+    expose String name;
+    expose String notice;
+
+    expose func init(key: String) {
+        store = SaveData.New(key); records = [];
+        difficulty = 1; music = true; effects = true; lanes = true; motion = true;
+        name = "MOU"; notice = "";
+    }
+    expose func count(level: Integer) -> Integer {
+        var n = 0;
+        for i in 0..records.length() { if records.get(i).difficulty == level { n = n + 1; } }
+        return n;
+    }
+    expose func entry(level: Integer, rank: Integer) -> Record {
+        var n = 0;
+        for i in 0..records.length() {
+            var r = records.get(i);
+            if r.difficulty == level {
+                if n == rank { return r; } n = n + 1;
+            }
+        }
+        return null;
+    }
+    expose func add(r: Record) {
+        var at = records.length();
+        for i in 0..records.length() {
+            if r.points > records.get(i).points { at = i; break; }
+        }
+        records.insert(at, r);
+        var count = 0;
+        for i in 0..records.length() {
+            if records.get(i).difficulty == r.difficulty {
+                count = count + 1;
+                if count > 10 { records.removeAt(i); break; }
+            }
+        }
+    }
+    expose func recordRun(g: rules.Board) {
+        self.add(new Record(name, score(g), g.room, g.totalTurns, g.difficulty, g.state == rules.WON));
+    }
+    expose func load() -> Boolean {
+        if !store.Load() { notice = "Profile unreadable. Using defaults for this session."; return false; }
+        difficulty = clamp(store.GetInt("difficulty", 1), 0, 2);
+        music = store.GetInt("music", 1) != 0; effects = store.GetInt("effects", 1) != 0;
+        lanes = store.GetInt("lanes", 1) != 0; motion = store.GetInt("motion", 1) != 0;
+        name = initials(store.GetString("initials", "MOU"));
+        records.clear();
+        var count = clamp(store.GetInt("record_count", 0), 0, 30);
+        for i in 0..count {
+            var p = "r" + Fmt.Int(i) + "_";
+            var level = store.GetInt(p + "difficulty", -1);
+            var value = store.GetInt(p + "score", -1);
+            var rooms = store.GetInt(p + "rooms", -1);
+            var turns = store.GetInt(p + "turns", -1);
+            if level >= 0 && level <= 2 && value >= 0 && value <= 1000000 &&
+               rooms >= 0 && rooms <= 10 && turns >= 0 && turns <= 10000000 {
+                self.add(new Record(store.GetString(p + "name", "MOU"), value, rooms, turns,
+                                    level, store.GetInt(p + "won", 0) != 0 && rooms == 10));
+            }
+        }
+        return true;
+    }
+    expose func save() -> Boolean {
+        store.Clear(); store.SetInt("version", 1);
+        store.SetInt("difficulty", difficulty); store.SetInt("music", flag(music));
+        store.SetInt("effects", flag(effects)); store.SetInt("lanes", flag(lanes));
+        store.SetInt("motion", flag(motion)); store.SetString("initials", name);
+        store.SetInt("record_count", records.length());
+        for i in 0..records.length() {
+            var r = records.get(i); var p = "r" + Fmt.Int(i) + "_";
+            store.SetInt(p + "score", r.points); store.SetInt(p + "rooms", r.rooms);
+            store.SetInt(p + "turns", r.turns); store.SetInt(p + "difficulty", r.difficulty);
+            store.SetInt(p + "won", flag(r.won)); store.SetString(p + "name", r.name);
+        }
+        if !store.Save() { notice = "Could not save profile. Changes remain in this session."; return false; }
+        notice = ""; return true;
+    }
+}

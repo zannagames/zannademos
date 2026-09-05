@@ -1,0 +1,170 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/art.zia
+// Purpose: Generate and cache the complete tile artwork with optional PNG skins.
+// Key invariants:
+//   - All sprites use transparent 64px RGBA buffers and load only at startup.
+//   - Missing or unreadable overrides retain the procedural fallback.
+// Ownership/Lifetime:
+//   - Art owns its sprite list; render targets borrow sprites while drawing.
+// Links: assets/README.md, view.zia
+//===----------------------------------------------------------------------===//
+module art;
+bind Zanna.Graphics;
+bind Zanna.IO.File as File;
+bind Zanna.IO.Path as Path;
+bind Zanna.System.Environment as Env;
+bind Zanna.Terminal as Terminal;
+
+final SIZE = 64;
+final INK = 0x152F32;
+final PAPER = 0xF4EBD8;
+final GOLD = 0xF0BD55;
+final MUTED = 0x94AAA5;
+final RED = 0xDD796A;
+
+expose func filename(id: Integer) -> String {
+    if id == 0 { return "floor.png"; }
+    if id == 1 { return "wall.png"; }
+    if id == 2 { return "crate.png"; }
+    if id == 3 { return "cheese.png"; }
+    if id == 4 { return "mouse.png"; }
+    if id == 5 { return "cat_sentry.png"; }
+    if id == 6 { return "cat_stalker.png"; }
+    if id == 7 { return "cat_prowler.png"; }
+    if id == 8 { return "exit_closed.png"; }
+    return "exit_open.png";
+}
+
+/// @brief Hand-drawn pixel primitives form the default replaceable sprite set.
+expose func generate(id: Integer) -> Pixels {
+    // Author at a common design resolution, then cache at the board's tile size.
+    var p = Pixels.New(40, 40);
+    if id == 0 {
+        p.FillColor(0x234346);
+        p.DrawLine(0, 39, 39, 39, 0x1D3B3E);
+        p.DrawLine(39, 0, 39, 39, 0x1D3B3E);
+        p.DrawLine(5, 8, 8, 8, 0x2B4A4C);
+        p.SetRgb(30, 30, 0x2D4E50);
+    } else if id == 1 {
+        p.FillColor(0x193236);
+        p.DrawBox(1, 2, 38, 35, 0x56716C);
+        p.DrawBox(2, 3, 36, 5, 0x779088);
+        p.DrawLine(2, 19, 37, 19, 0x304D4C);
+        p.DrawLine(20, 3, 20, 18, 0x304D4C);
+        p.DrawLine(10, 20, 10, 35, 0x304D4C);
+        p.DrawLine(31, 20, 31, 35, 0x304D4C);
+        p.DrawLine(3, 21, 8, 21, 0x6E8780);
+        p.DrawLine(13, 21, 28, 21, 0x6E8780);
+    } else if id == 2 {
+        p.DrawBox(4, 7, 33, 31, 0x152F32);
+        p.DrawBox(3, 3, 33, 31, 0x9D623C);
+        p.DrawBox(5, 5, 29, 27, 0xC18A52);
+        p.DrawFrame(7, 7, 25, 23, 0x704729);
+        p.DrawLine(8, 15, 30, 15, 0xA16A3D);
+        p.DrawLine(8, 23, 30, 23, 0xA16A3D);
+        p.DrawThickLine(7, 7, 31, 29, 5, 0xE0AC69);
+        p.DrawLine(9, 7, 32, 28, 0xF2C37F);
+        p.DrawDisc(7, 7, 1, 0x704729); p.DrawDisc(31, 29, 1, 0x704729);
+    } else if id == 3 {
+        p.DrawEllipse(20, 31, 14, 4, 0x193739);
+        p.DrawTriangle(7, 15, 31, 10, 32, 29, 0xA76B2E);
+        p.DrawBox(7, 21, 25, 8, 0xE8A340);
+        p.DrawTriangle(7, 15, 30, 9, 31, 23, 0xFFE18A);
+        p.DrawTriangle(7, 15, 31, 23, 7, 25, 0xF5C655);
+        p.DrawLine(8, 15, 29, 10, 0xFFF0BA);
+        p.DrawDisc(15, 19, 2, 0xC08A37); p.DrawDisc(24, 16, 2, 0xE8B74E);
+        p.DrawDisc(26, 25, 2, 0xBA7D2F); p.DrawDisc(11, 26, 1, 0xBA7D2F);
+    } else if id == 4 {
+        p.DrawEllipse(21, 34, 13, 3, 0x142E32);
+        p.DrawBezier(13, 28, -1, 37, 7, 18, 0xE8A29A);
+        p.DrawDisc(12, 12, 8, INK); p.DrawDisc(28, 12, 8, INK);
+        p.DrawDisc(12, 12, 6, 0xD1D8CE); p.DrawDisc(28, 12, 6, 0xD1D8CE);
+        p.DrawDisc(12, 12, 4, 0xE2A09A); p.DrawDisc(28, 12, 4, 0xE2A09A);
+        p.DrawEllipse(20, 25, 11, 12, INK);
+        p.DrawEllipse(20, 24, 9, 11, 0xE8E8D9);
+        p.DrawEllipse(17, 21, 4, 7, 0xFFFFFF);
+        p.DrawDisc(16, 21, 2, INK); p.DrawDisc(25, 21, 2, INK);
+        p.DrawDisc(20, 28, 2, 0xD58187);
+        p.DrawLine(9, 26, 15, 27, PAPER); p.DrawLine(26, 27, 33, 25, PAPER);
+        p.DrawBox(13, 34, 5, 2, 0xE8A29A); p.DrawBox(23, 34, 5, 2, 0xE8A29A);
+    } else if id >= 5 && id <= 7 {
+        var fur = 0xDDB05F; var light = 0xFCE0A0;
+        if id == 6 { fur = 0x639EAE; light = 0xB0D6DA; }
+        if id == 7 { fur = 0x9C83B6; light = 0xD6B9DE; }
+        p.DrawEllipse(20, 34, 14, 3, 0x142E32);
+        p.DrawTriangle(6, 5, 18, 15, 7, 25, INK);
+        p.DrawTriangle(34, 5, 22, 15, 33, 25, INK);
+        p.DrawTriangle(8, 8, 18, 17, 9, 24, fur);
+        p.DrawTriangle(32, 8, 22, 17, 31, 24, fur);
+        p.DrawTriangle(10, 12, 15, 17, 10, 20, 0xDCA29C);
+        p.DrawTriangle(30, 12, 25, 17, 30, 20, 0xDCA29C);
+        p.DrawEllipse(20, 24, 15, 12, INK);
+        p.DrawEllipse(20, 23, 13, 11, fur);
+        p.DrawEllipse(20, 29, 8, 4, light);
+        p.DrawLine(17, 14, 19, 18, INK); p.DrawLine(23, 14, 22, 18, INK);
+        p.DrawBox(11, 21, 7, 4, light); p.DrawBox(23, 21, 7, 4, light);
+        p.DrawBox(15, 21, 2, 4, INK); p.DrawBox(23, 21, 2, 4, INK);
+        p.DrawTriangle(18, 27, 22, 27, 20, 30, INK);
+        p.DrawLine(2, 27, 12, 28, light); p.DrawLine(28, 28, 38, 27, light);
+        p.DrawLine(3, 31, 12, 30, light); p.DrawLine(28, 30, 37, 31, light);
+        if id == 5 { p.DrawDisc(20, 6, 3, GOLD); }
+        if id == 7 { p.DrawLine(17, 4, 20, 7, light); p.DrawLine(20, 7, 23, 4, light); }
+    } else {
+        var rim = 0x7B9389;
+        if id == 9 { rim = 0xA8D8A3; }
+        p.DrawDisc(20, 19, 16, rim); p.DrawBox(4, 19, 33, 18, rim);
+        p.DrawDisc(20, 20, 12, 0x10272B); p.DrawBox(8, 20, 25, 17, 0x10272B);
+        if id == 8 {
+            p.DrawLine(14, 12, 14, 35, 0x7B9389); p.DrawLine(25, 12, 25, 35, 0x7B9389);
+            p.DrawBox(17, 23, 7, 7, GOLD); p.DrawDisc(20, 26, 1, INK);
+        } else {
+            p.DrawTriangle(23, 20, 29, 26, 23, 32, rim);
+            p.DrawBox(12, 24, 13, 4, rim);
+        }
+    }
+    return p.Scale(SIZE, SIZE);
+}
+
+class Art {
+    expose List[Pixels] sprites;
+    expose Pixels heroMouse;
+    expose Pixels heroCat;
+    expose Integer overrides;
+
+    expose func init() {
+        sprites = []; overrides = 0;
+        for id in 0..10 {
+            var sprite = generate(id);
+            var path = self.resolve(filename(id));
+            if path != "" {
+                var loaded = Pixels.LoadPng(path);
+                if loaded != null {
+                    sprite = loaded.Scale(SIZE, SIZE); overrides = overrides + 1;
+                } else { Terminal.Say("Ignoring unreadable PNG: " + path); }
+            }
+            sprites.add(sprite);
+        }
+        heroMouse = sprites.get(4).Scale(160, 160);
+        heroCat = sprites.get(5).Scale(200, 200);
+    }
+
+    hide func resolve(file: String) -> String {
+        var custom = Env.GetVariable("CATNMOUSE_ASSETS");
+        if custom != "" {
+            var path = Path.Join(custom, file);
+            if File.Exists(path) { return path; }
+            return "";
+        }
+        var roots: List[String] = [Path.Join(Path.ExeDir(), "assets"),
+            Path.Join(Path.ExeDir(), "../Resources/assets"), "assets",
+            "zannademos/catnmouse/assets", "catnmouse/assets"];
+        for i in 0..roots.length() {
+            var path = Path.Join(roots.get(i), file);
+            if File.Exists(path) { return path; }
+        }
+        return "";
+    }
+}

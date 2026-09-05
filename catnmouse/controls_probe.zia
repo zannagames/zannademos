@@ -1,0 +1,43 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/controls_probe.zia
+// Purpose: Test stick hysteresis and keyboard/controller action mappings.
+// Key invariants:
+//   - Synthetic analog samples cannot spend repeated turns without neutral.
+// Ownership/Lifetime:
+//   - The probe owns its latch; no physical controller or window is required.
+// Links: controls.zia, session_probe.zia
+//===----------------------------------------------------------------------===//
+module controls_probe;
+bind Zanna.Input.Action as Action;
+bind Zanna.Input.Key as Key;
+bind Zanna.Input.Pad as Pad;
+bind Zanna.Terminal as Terminal;
+bind Zanna.System.Environment as Env;
+bind "./controls";
+
+func require(ok: Boolean, message: String) {
+    if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
+}
+func start() {
+    var stick = new controls.StickLatch();
+    require(stick.sample(0.1, -0.1) == "" && stick.sample(0.54, 0.0) == "", "deadzone and threshold");
+    require(stick.sample(0.8, 0.3) == "right", "dominant horizontal axis");
+    require(stick.sample(0.9, 0.0) == "" && stick.sample(-0.9, 0.0) == "", "held stick and reversal cannot repeat");
+    require(stick.sample(0.3, 0.0) == "" && stick.held, "release hysteresis");
+    require(stick.sample(0.2, 0.0) == "" && !stick.held, "neutral rearms");
+    require(stick.sample(-0.8, -0.9) == "up", "dominant vertical axis");
+    require(stick.sample(0.0, 0.0) == "" && stick.sample(0.0, 1.0) == "down", "positive Y down");
+    require(stick.sample(0.0, 0.0) == "" && stick.sample(-1.0, 0.0) == "left", "negative X left");
+    var input = new controls.Controls();
+    require(!input.lastPad && !input.disconnected, "initial input state");
+    require(Action.KeyBoundTo(Key.W) == "catnmouse_up" && Action.KeyBoundTo(Key.Up) == "catnmouse_up", "WASD and arrow movement");
+    require(Action.PadButtonBoundTo(-1, Pad.ButtonUp) == "catnmouse_up", "any-controller D-pad");
+    require(Action.PadButtonBoundTo(-1, Pad.ButtonA) == "catnmouse_enter", "A confirm");
+    require(Action.PadButtonBoundTo(-1, Pad.ButtonB) == "catnmouse_escape", "B back");
+    require(Action.PadButtonBoundTo(-1, Pad.ButtonX) == "catnmouse_wait", "X wait");
+    require(Action.PadButtonBoundTo(-1, Pad.ButtonStart) == "catnmouse_pause", "Start pause");
+    Terminal.Say("RESULT: ok");
+}

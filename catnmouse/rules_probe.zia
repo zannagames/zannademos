@@ -1,0 +1,121 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/rules_probe.zia
+// Purpose: Exercise tactical rules and campaign invariants without a window.
+// Key invariants:
+//   - Failures exit nonzero; identical seeds give identical outcomes.
+// Ownership/Lifetime:
+//   - Each scenario owns its game state for the duration of the probe.
+// Links: rules.zia, rooms.zia, DESIGN.md
+//===----------------------------------------------------------------------===//
+module rules_probe;
+bind Zanna.Terminal as Terminal;
+bind Zanna.System.Environment as Env;
+bind "./rules";
+bind "./rooms";
+
+func require(ok: Boolean, message: String) {
+    if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
+}
+
+func start() {
+    var g = new rules.Board();
+    require(rules.W == 20 && rules.H == 11, "requested board dimensions");
+    g.addCat(9, 2, 0);
+    require(g.danger(1, 2) && g.danger(9, rules.H - 2), "distant cardinal exposure");
+    require(!g.danger(2, 3), "diagonal is safe");
+    g.setTile(5, 2, 2);
+    require(!g.danger(1, 2), "crate blocks sight");
+    g.setTile(5, 2, 1);
+    require(!g.danger(1, 2), "wall blocks sight");
+    g.clearRoom();
+    g.mx = 2; g.my = 2; g.setTile(3, 2, 2);
+    require(g.step(1, 0) && g.mx == 3 && g.tile(4, 2) == 2, "push one crate");
+    g.setTile(5, 2, 2);
+    require(!g.step(1, 0) && g.turn == 1, "no chain push or wasted turn");
+    g.setTile(5, 2, 0); g.cheese.add(5 + 2 * rules.W);
+    require(!g.step(1, 0), "cannot push onto cheese");
+    g.cheese.clear(); g.ex = 5; g.ey = 2;
+    require(!g.step(1, 0), "cannot block exit");
+    g.ex = rules.W - 2; g.ey = rules.H - 2; g.addCat(5, 2, 1);
+    require(!g.step(1, 0), "cannot push into cat");
+    require(!g.step(1, 1) && !g.step(2, 0), "reject noncardinal moves");
+
+    g.clearRoom(); g.mx = 3; g.my = 5;
+    g.addCat(6, 5, 1);
+    g.setTile(6, 4, 1); g.setTile(6, 6, 1); g.setTile(7, 5, 1);
+    g.setTile(4, 5, 2);
+    require(g.step(1, 0) && g.liveCats() == 0 && g.state == rules.PLAY,
+            "final enclosing push captures before exposure");
+    g.clearRoom(); g.addCat(6, 5, 0);
+    g.setTile(6, 4, 1); g.setTile(6, 6, 1); g.setTile(7, 5, 1); g.setTile(5, 5, 2);
+    g.capture(); require(g.liveCats() == 1, "sentries are indestructible");
+    g.clearRoom(); g.addCat(6, 5, 1);
+    g.setTile(6, 4, 1); g.setTile(6, 6, 1); g.setTile(7, 5, 1); g.addCat(5, 5, 0);
+    g.capture(); require(g.liveCats() == 2, "another cat is not enclosure");
+
+    g.clearRoom(); g.mx = 2; g.my = 3; g.addCat(9, 2, 2);
+    g.step(0, -1);
+    require(g.state == rules.DEAD && g.lives == 4 && g.cats.get(0).x == 9,
+            "exposure before enemy movement, one life only");
+    g.setTile(4, 6, 2); g.collected = 3;
+    g.resume();
+    require(g.state == rules.PLAY && !g.danger(g.mx, g.my) && g.tile(4, 6) == 2 &&
+            g.collected == 3 && g.turn == 1, "safe respawn preserves room");
+    g.clearRoom(); g.mx = 2; g.my = 2; g.addCat(9, 8, 1);
+    g.step(0, 0); require(g.cats.get(0).x == 9 && g.cats.get(0).y == 8, "stalker waits");
+    g.step(0, 0); require(g.cats.get(0).x != 9 || g.cats.get(0).y != 8, "stalker cadence");
+    g.clearRoom(); g.mx = 2; g.my = 2; g.addCat(3, 3, 2);
+    g.step(0, 0); require(g.state == rules.DEAD, "cat relocation creates lethal lane");
+
+    g.clearRoom(); g.mx = 2; g.my = 2; g.cheese.add(3 + 2 * rules.W);
+    g.step(1, 0); require(g.collected == 1 && g.cheese.length() == 0, "collect cheese");
+    g.relocate(); require(g.cheese.length() == 11 && g.collected == 1, "relocate only outstanding cheese");
+    g.countdown = 1; g.step(0, 0);
+    require(g.countdown == g.interval && g.cheese.length() == 11, "relocation countdown");
+    var a = new rules.Board(); var b = new rules.Board();
+    a.seed = 173; b.seed = 173; a.relocate(); b.relocate();
+    for i in 0..12 { require(a.cheese.get(i) == b.cheese.get(i), "seed repeatability"); }
+    g.clearRoom();
+    for y in 1..rules.H - 1 { for x in 1..rules.W - 1 { g.setTile(x, y, 2); } }
+    g.setTile(1, 1, 0); g.relocate();
+    require(g.cheese.length() == 0 && g.collected == 0, "crowded board bounded pending cheese");
+    g.setTile(2, 1, 0); g.relocate();
+    require(g.cheese.length() == 1, "pending cheese retries");
+
+    g.clearRoom(); g.mx = g.ex - 1; g.my = g.ey; g.collected = 11;
+    g.step(1, 0); require(g.state == rules.PLAY, "locked exit");
+    g.mx = g.ex - 1; g.collected = 12; g.mustClear = true; g.addCat(8, 5, 1);
+    g.step(1, 0); require(g.state == rules.PLAY, "clear objective gates exit");
+    g.cats.clear(); g.mx = g.ex - 1; g.step(1, 0);
+    require(g.state == rules.MAP && g.room == 1, "room completion to map");
+    rooms.load(g, 9); g.cats.clear(); g.collected = 12; g.mx = g.ex - 1; g.my = g.ey;
+    g.setTile(g.mx, g.my, 0); g.step(1, 0);
+    require(g.state == rules.WON, "tenth room completes campaign");
+    g.clearRoom(); g.lives = 1; g.lose(); g.resume();
+    require(g.state == rules.OVER && g.lives == 0, "last life cannot resume");
+    g.clearRoom(); g.lives = 3;
+    for y in 1..rules.H - 1 { for x in 1..rules.W - 1 { g.setTile(x, y, 1); } }
+    g.lose(); g.resume(); require(g.state == rules.OVER, "no safe refuge terminates");
+
+    for room in 0..10 {
+        g.lives = 5; rooms.load(g, room);
+        require(g.cheese.length() == 12 && g.collected == 0, "twelve cheese per room");
+        require(!g.danger(g.mx, g.my) && g.tile(g.mx, g.my) == 0, "safe room entrance");
+        require(g.tile(g.ex, g.ey) == 0 && g.liveCats() > 0, "room exit and cats");
+        for x in 0..rules.W { require(g.tile(x, 0) == 1 && g.tile(x, rules.H - 1) == 1, "horizontal boundary"); }
+        for y in 0..rules.H { require(g.tile(0, y) == 1 && g.tile(rules.W - 1, y) == 1, "vertical boundary"); }
+        for i in 0..g.cats.length() {
+            var c = g.cats.get(i);
+            require(g.tile(c.x, c.y) == 0 && (!g.mustClear || c.kind != 0), "compatible cats");
+        }
+        for i in 0..g.cheese.length() {
+            var pos = g.cheese.get(i); var x = pos % rules.W; var y = pos / rules.W;
+            require(g.tile(x, y) == 0 && g.catAt(x, y) < 0 && !(x == g.ex && y == g.ey), "eligible cheese");
+            for j in 0..i { require(g.cheese.get(j) != pos, "unique cheese"); }
+        }
+    }
+    Terminal.Say("RESULT: ok");
+}

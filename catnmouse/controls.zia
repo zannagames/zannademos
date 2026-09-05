@@ -1,0 +1,87 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/controls.zia
+// Purpose: Unify keyboard, D-pad and deliberately latched analog-stick input.
+// Key invariants:
+//   - A stick must return to neutral before it can spend another turn.
+//   - Any connected controller works; a frame produces at most one command.
+// Ownership/Lifetime:
+//   - Controls owns a stick latch and process-global namespaced action bindings.
+// Links: main.zia, controls_probe.zia, docs/zannalib/input.md
+//===----------------------------------------------------------------------===//
+module controls;
+bind Zanna.Input.Action as Action;
+bind Zanna.Input.Key as Key;
+bind Zanna.Input.Pad as Pad;
+
+class StickLatch {
+    expose Boolean held;
+    expose func init() { held = false; }
+    expose func sample(x: Number, y: Number) -> String {
+        var ax = x; var ay = y;
+        if ax < 0.0 { ax = 0.0 - ax; } if ay < 0.0 { ay = 0.0 - ay; }
+        if ax <= 0.25 && ay <= 0.25 { held = false; return ""; }
+        if held || (ax < 0.55 && ay < 0.55) { return ""; }
+        held = true;
+        if ax > ay { if x < 0.0 { return "left"; } return "right"; }
+        if y < 0.0 { return "up"; } return "down";
+    }
+}
+
+class Controls {
+    expose Boolean lastPad;
+    expose Boolean disconnected;
+    hide Integer padCount;
+    hide StickLatch stick;
+    hide List[String] names;
+
+    expose func init() {
+        lastPad = false; disconnected = false; padCount = Pad.Count(); stick = new StickLatch();
+        self.define("up", Key.Up, Key.W, Pad.ButtonUp);
+        self.define("down", Key.Down, Key.S, Pad.ButtonDown);
+        self.define("left", Key.Left, Key.A, Pad.ButtonLeft);
+        self.define("right", Key.Right, Key.D, Pad.ButtonRight);
+        self.define("enter", Key.Enter, Key.NumpadEnter, Pad.ButtonA);
+        self.define("escape", Key.Escape, Key.Escape, Pad.ButtonB);
+        self.define("wait", Key.Space, Key.Space, Pad.ButtonX);
+        self.define("pause", Key.P, Key.P, Pad.ButtonStart);
+        self.define("help", Key.H, Key.F1, Pad.ButtonBack);
+        self.define("lanes", Key.L, Key.L, Pad.ButtonY);
+        self.define("mute", Key.M, Key.M, -1);
+        self.define("effects", Key.N, Key.N, -1);
+        self.define("surrender", Key.R, Key.R, Pad.ButtonRightBumper);
+        names = ["escape", "pause", "enter", "help", "mute", "effects", "lanes",
+                 "surrender", "up", "down", "left", "right", "wait"];
+    }
+    hide func define(name: String, key: Integer, alternate: Integer, button: Integer) {
+        var action = "catnmouse_" + name;
+        var _ = Action.Define(action);
+        _ = Action.BindKey(action, key);
+        if alternate != key { _ = Action.BindKey(action, alternate); }
+        if button >= 0 { _ = Action.BindPadButton(action, -1, button); }
+    }
+    /// @brief Also sample while unfocused so held analog input cannot leak on resume.
+    expose func poll() -> String {
+        var count = Pad.Count(); disconnected = lastPad && padCount > 0 && count == 0;
+        padCount = count;
+        var x = 0.0; var y = 0.0; var strength = 0.0; var padEdge = false;
+        for pad in 0..4 {
+            if Pad.IsConnected(pad) {
+                var px = Pad.LeftX(pad); var py = Pad.LeftY(pad);
+                var magnitude = px * px + py * py;
+                if magnitude > strength { x = px; y = py; strength = magnitude; }
+                for button in 0..14 { if Pad.WasPressed(pad, button) { padEdge = true; } }
+            }
+        }
+        var analog = stick.sample(x, y);
+        for i in 0..names.length() {
+            if Action.Pressed("catnmouse_" + names.get(i)) {
+                lastPad = padEdge; return names.get(i);
+            }
+        }
+        if analog != "" { lastPad = true; }
+        return analog;
+    }
+}

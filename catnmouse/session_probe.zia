@@ -1,0 +1,64 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/session_probe.zia
+// Purpose: Verify menus, difficulty, scoring, initials and score-table boundaries.
+// Key invariants:
+//   - This probe never writes the player's profile or opens a window.
+// Ownership/Lifetime:
+//   - The probe owns in-memory sessions and score records.
+// Links: session.zia, profile.zia
+//===----------------------------------------------------------------------===//
+module session_probe;
+bind Zanna.Terminal as Terminal;
+bind Zanna.System.Environment as Env;
+bind "./session";
+bind "./profile";
+bind "./rules";
+bind "./rooms";
+bind "./menus";
+
+func require(ok: Boolean, message: String) {
+    if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
+}
+func start() {
+    var p = new profile.Profile("catnmouse-probe-memory");
+    var s = new session.Session(173, p, false);
+    require(s.command("down") && s.selected == 1 && s.game.turn == 0, "menu navigation spends no turn");
+    require(s.command("enter") && s.mode == session.SETTINGS, "settings reachable");
+    require(s.command("right") && p.difficulty == 2, "change difficulty");
+    require(s.command("down") && s.command("enter") && !p.music && p.effects, "independent music toggle");
+    require(s.command("escape") && s.mode == session.TITLE, "settings back");
+    require(s.command("enter") && s.game.lives == 3 && s.game.difficulty == 2 && s.game.interval == 8, "fierce run settings");
+    require(s.command("pause") && s.mode == session.PAUSE, "pause");
+    require(s.command("down") && s.command("enter") && s.command("right"), "next-run difficulty setting");
+    require(p.difficulty == 0 && s.game.difficulty == 2 && s.game.lives == 3, "difficulty locked during run");
+    require(s.command("escape") && s.command("escape") && s.mode == session.GAME, "resume preserves run");
+    require(s.focusLost() && s.mode == session.PAUSE && s.game.turn == 0, "focus/disconnect pauses");
+    require(s.command("pause") && s.mode == session.GAME, "Start/P resumes");
+    require(s.command("surrender") && s.command("escape") && s.game.lives == 3, "surrender cancel");
+    require(s.command("surrender") && s.command("enter") && s.game.lives == 2, "surrender confirms once");
+    require(s.command("enter") && s.game.state == rules.PLAY, "respawn via confirm");
+    s.game.room = 10; s.game.collected = 12; s.game.state = rules.WON;
+    s.game.lives = 3; s.game.totalTurns = 100; s.game.captures = 4;
+    s.finish(); s.finish();
+    require(p.count(2) == 1 && p.entry(2, 0).points == 29300 && !s.active, "score and exactly-once record");
+    require(s.command("enter") && s.mode == session.SCORES && s.scoreTab == 2, "ending opens own difficulty scores");
+    require(s.command("escape") && s.mode == session.TITLE && s.command("enter"), "new campaign from title");
+    require(s.game.lives == 7 && s.game.interval == 14 && s.game.cadence(1) == 3 && s.game.cadence(2) == 2, "cozy rules");
+    rooms.load(s.game, 9); require(s.game.interval == 10, "late cozy timer");
+    require(s.command("pause") && s.command("down") && s.command("enter"), "return settings");
+    s.selected = 5; require(s.command("enter") && s.mode == session.INITIALS, "initials editor");
+    require(s.command("up") && s.draftName == "NOU", "initials letter editing");
+    require(s.command("escape") && p.name == "MOU", "initials cancel");
+    require(s.command("enter") && s.command("down") && s.command("enter") && p.name == "LOU", "initials save");
+    require(profile.initials("bad") == "MOU" && profile.initials("ABCD") == "MOU", "initials validation");
+    for i in 0..14 { p.add(new profile.Record("ACE", i * 100, 2, 50, 0, false)); }
+    require(p.count(0) == 10 && p.entry(0, 0).points == 1300 && p.entry(0, 9).points == 400, "top ten ordering and trimming");
+    require(p.count(2) == 1 && p.count(1) == 0 && p.entry(1, 0) == null, "difficulty-separated boards");
+    require(menus.hit(session.TITLE, 80, 400) == 0 && menus.hit(session.TITLE, 80, 445) == -1, "menu hit regions exclude gaps");
+    require(menus.hit(session.SETTINGS, 100, 655) == 6 && menus.hit(session.SCORES, 1140, 800) == 100, "settings/back hit regions");
+    require(menus.hit(session.INITIALS, 580, 400) == -1, "initials gap is not interactive");
+    Terminal.Say("RESULT: ok");
+}

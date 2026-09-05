@@ -1,0 +1,52 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/profile_probe.zia
+// Purpose: Verify durable profile round trips and rejection of malformed records.
+// Key invariants:
+//   - The caller supplies a fresh catnmouse-test- key, never the player profile.
+// Ownership/Lifetime:
+//   - The probe creates and retains one isolated platform save fixture.
+// Links: profile.zia, README.md
+//===----------------------------------------------------------------------===//
+module profile_probe;
+bind Zanna.Terminal as Terminal;
+bind Zanna.System.Environment as Env;
+bind Zanna.String as Str;
+bind Zanna.IO.File as File;
+bind "./profile";
+
+func require(ok: Boolean, message: String) {
+    if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
+}
+func start() {
+    var key = Env.GetVariable("CATNMOUSE_PROFILE_TEST_KEY");
+    require(Str.Left(key, 15) == "catnmouse-test-" && Str.get_Length(key) > 15,
+            "supply a fresh CATNMOUSE_PROFILE_TEST_KEY beginning catnmouse-test-");
+    var p = new profile.Profile(key);
+    require(!File.Exists(p.store.Path), "test profile must not already exist");
+    require(p.load() && p.records.length() == 0, "missing profile gives defaults");
+    p.name = "ACE"; p.difficulty = 2; p.music = false; p.effects = true;
+    p.lanes = false; p.motion = false;
+    p.add(new profile.Record("ACE", 18000, 10, 431, 2, true));
+    p.add(new profile.Record("KIT", 2000, 2, 60, 0, false));
+    require(p.save(), "atomic profile write");
+    var q = new profile.Profile(key);
+    require(q.load() && q.name == "ACE" && q.difficulty == 2 && !q.music && q.effects &&
+            !q.lanes && !q.motion, "preferences survive reload");
+    require(q.count(2) == 1 && q.entry(2, 0).points == 18000 && q.entry(2, 0).won &&
+            q.entry(0, 0).name == "KIT", "leaderboards survive reload");
+    q.store.SetInt("difficulty", 99); q.store.SetString("initials", "invalid");
+    q.store.SetInt("r0_score", -100);
+    require(q.store.Save() && q.load(), "read valid JSON with invalid values");
+    require(q.difficulty == 2 && q.name == "MOU" && q.count(2) == 0 && q.count(0) == 1,
+            "clamped settings and rejected malformed score");
+    File.WriteAllText(q.store.Path, "{broken-json");
+    var clean = new profile.Profile(key);
+    require(!clean.load() && clean.records.length() == 0 && clean.difficulty == 1 && clean.notice != "",
+            "corrupt profile is nonfatal and visible");
+    require(clean.save(), "recover with a complete atomic profile");
+    Terminal.Say("TEST PROFILE: " + clean.store.Path);
+    Terminal.Say("RESULT: ok");
+}

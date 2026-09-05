@@ -1,0 +1,251 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/menus.zia
+// Purpose: Pixel-art front end, settings, initials and local leaderboard screens.
+// Key invariants:
+//   - Button hit regions match the drawn rectangles; text never changes rules.
+//   - Artwork uses nearest-neighbor pixels and the same replaceable sprite bank.
+// Ownership/Lifetime:
+//   - Menus borrows the view and owns only enlarged decorative sprite caches.
+// Links: session.zia, profile.zia, view.zia, art.zia
+//===----------------------------------------------------------------------===//
+module menus;
+bind Zanna.Graphics;
+bind Zanna.Text.Fmt as Fmt;
+bind Zanna.String as Str;
+bind "./view";
+bind "./art";
+bind "./session";
+bind "./profile";
+bind "./rules";
+
+/// @brief Return an actionable row/tab, or 100 for the screen's back/done button.
+expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
+    if mode == session.TITLE || mode == session.PAUSE {
+        if x >= 72 && x < 502 && y >= 388 && y < 708 {
+            var row = (y - 388) / 64;
+            if (y - 388) % 64 < 52 { return row; }
+        }
+    }
+    if mode == session.SETTINGS {
+        if x >= 72 && x < 792 && y >= 210 && y < 714 {
+            if (y - 210) % 72 < 56 { return (y - 210) / 72; }
+        }
+    }
+    if mode == session.SCORES {
+        if y >= 160 && y < 204 && x >= 72 && x < 720 {
+            if (x - 72) % 216 < 200 { return (x - 72) / 216; }
+        }
+        if x >= 1100 && x < 1272 && y >= 780 && y < 824 { return 100; }
+    }
+    if mode == session.INITIALS {
+        if y >= 360 && y < 488 && x >= 440 && x < 896 && (x - 440) % 152 < 128 {
+            return (x - 440) / 152;
+        }
+        if x >= 440 && x < 896 && y >= 600 && y < 656 { return 100; }
+    }
+    return -1;
+}
+
+class Menus {
+    expose Boolean controller;
+    hide view.View v;
+    hide Pixels p;
+    hide Pixels cat;
+    hide Pixels mouse;
+    hide Pixels crate;
+    hide Pixels cheese;
+
+    expose func init(screen: view.View) {
+        v = screen; p = v.pixels; controller = false;
+        cat = v.bank.sprites.get(5).Scale(256, 256);
+        mouse = v.bank.sprites.get(4).Scale(192, 192);
+        crate = v.bank.sprites.get(2).Scale(128, 128);
+        cheese = v.bank.sprites.get(3).Scale(128, 128);
+    }
+    hide func text(x: Integer, y: Integer, s: String, color: Integer) { p.DrawText(x, y, s, color); }
+    hide func big(x: Integer, y: Integer, s: String, scale: Integer, color: Integer) {
+        p.DrawTextScaled(x, y, s, scale, color);
+    }
+    hide func background(label: String) {
+        p.FillColor(0x10272C);
+        p.DrawBox(24, 24, view.WIDTH - 48, view.HEIGHT - 48, 0x1C393C);
+        p.DrawFrame(24, 24, view.WIDTH - 48, view.HEIGHT - 48, 0x53706A);
+        p.DrawFrame(32, 32, view.WIDTH - 64, view.HEIGHT - 64, 0x29474A);
+        for i in 0..28 {
+            var x = 52 + (i * 193) % 1232; var y = 114 + (i * 97) % 660;
+            p.DrawBox(x, y, 2, 2, 0x39534F);
+        }
+        v.target.DrawPixels(60, 44, v.bank.sprites.get(4));
+        self.big(140, 57, "CAT 'N' MOUSE", 2, art.PAPER);
+        self.text(140, 85, "THE MIDNIGHT CHEESE HEIST", art.MUTED);
+        self.text(1040, 70, label, art.GOLD);
+        p.DrawLine(72, 123, 1272, 123, 0x53706A);
+    }
+    hide func button(x: Integer, y: Integer, w: Integer, label: String, selected: Boolean) {
+        var fill = 0x28484A; var ink = art.PAPER;
+        if selected { fill = art.GOLD; ink = art.INK; }
+        p.DrawBox(x + 4, y + 5, w, 52, 0x10272C);
+        p.DrawBox(x, y, w, 52, fill);
+        p.DrawFrame(x, y, w, 52, 0x61756B);
+        if selected {
+            p.DrawBox(x - 8, y + 8, 4, 36, art.GOLD);
+            self.big(x + 16, y + 18, ">", 2, ink);
+        }
+        self.big(x + 48, y + 18, label, 2, ink);
+    }
+    hide func pantry() {
+        // A stepped moon, timber shelves and crisp 2x/3x/4x sprite enlargements.
+        p.DrawBox(964, 169, 208, 176, 0x10272C);
+        p.DrawBox(980, 185, 176, 144, 0x355457);
+        p.DrawBox(1084, 205, 40, 64, art.PAPER);
+        p.DrawBox(1076, 213, 56, 48, art.PAPER);
+        p.DrawBox(1084, 201, 48, 48, 0x355457);
+        p.DrawBox(1064, 185, 8, 144, 0x10272C);
+        p.DrawBox(980, 249, 176, 8, 0x10272C);
+        p.DrawBox(730, 425, 502, 16, 0xC08B59);
+        p.DrawBox(730, 441, 502, 8, 0x805B40);
+        p.DrawBox(730, 728, 502, 20, 0xC08B59);
+        p.DrawBox(730, 748, 502, 8, 0x805B40);
+        p.DrawBox(751, 449, 16, 279, 0x805B40); p.DrawBox(1197, 449, 16, 279, 0x805B40);
+        v.target.DrawPixels(798, 177, cat);
+        v.target.DrawPixels(1063, 308, cheese);
+        v.target.DrawPixels(755, 540, mouse);
+        v.target.DrawPixels(970, 604, crate); v.target.DrawPixels(1090, 604, crate);
+        v.target.DrawPixels(1090, 480, crate);
+        self.text(771, 784, "THE HOUSE IS WATCHING. MAKE YOUR MOVE.", art.MUTED);
+    }
+    hide func mainMenu(s: session.Session) {
+        self.background("VERSION 1.0 / LOCAL");
+        if s.mode == session.PAUSE {
+            self.big(72, 166, "IN COVER", 5, art.PAPER);
+            self.text(74, 229, "THE ROOM WAITS FOR YOU.", art.GOLD);
+            self.big(744, 180, "THE HEIST SO FAR", 3, art.PAPER);
+            self.text(746, 236, profile.difficultyName(s.game.difficulty) + " DIFFICULTY", art.GOLD);
+            self.big(746, 289, Fmt.Int(profile.score(s.game)) + " POINTS", 3, art.PAPER);
+            self.text(746, 350, "ROOMS CLEARED: " + Fmt.Int(s.game.room), art.MUTED);
+            self.text(746, 378, "CATS BOXED IN: " + Fmt.Int(s.game.captures), art.MUTED);
+            self.text(746, 406, "LIVES REMAIN: " + Fmt.Int(s.game.lives), art.MUTED);
+            v.target.DrawPixels(804, 485, mouse);
+            v.target.DrawPixels(1025, 525, crate);
+            self.text(746, 736, "MENUS NEVER ADVANCE THE BOARD.", art.GOLD);
+        } else {
+            self.big(72, 156, "CAT 'N'", 6, art.PAPER);
+            self.big(72, 215, "MOUSE", 8, art.GOLD);
+            self.text(75, 307, "SMALL PAWS. BIG PLANS. TWELVE CHEESE.", art.PAPER);
+            self.text(75, 333, "A tactical pixel-art heist in ten rooms.", art.MUTED);
+            self.pantry();
+        }
+        var first = "START HEIST"; if s.active { first = "RESUME HEIST"; }
+        var last = "QUIT GAME"; if s.mode == session.PAUSE { last = "MAIN MENU"; }
+        var labels: List[String] = [first, "SETTINGS", "HIGH SCORES", "HOW TO PLAY", last];
+        for i in 0..5 { self.button(72, 388 + i * 64, 430, labels.get(i), s.selected == i); }
+        self.text(75, 752, "NEXT HEIST: " + profile.difficultyName(s.prefs.difficulty), art.GOLD);
+        var inputHint = "ARROWS / WASD + ENTER / MOUSE";
+        if controller { inputHint = "D-PAD / STICK + A SELECT / B BACK"; }
+        self.text(75, 782, inputHint, art.MUTED);
+    }
+    hide func settings(s: session.Session) {
+        self.background("YOUR HOUSE RULES");
+        self.big(72, 156, "SETTINGS", 4, art.PAPER);
+        var music = "OFF"; if s.prefs.music { music = "ON"; }
+        var effects = "OFF"; if s.prefs.effects { effects = "ON"; }
+        var lanes = "OFF"; if s.prefs.lanes { lanes = "ON"; }
+        var motion = "REDUCED"; if s.prefs.motion { motion = "FULL"; }
+        var labels: List[String] = ["DIFFICULTY", "MUSIC", "SOUND EFFECTS", "LANE ASSIST", "MOTION", "INITIALS", "BACK"];
+        var values: List[String] = [profile.difficultyName(s.prefs.difficulty), music, effects, lanes, motion, s.prefs.name, ""];
+        for i in 0..7 {
+            var y = 210 + i * 72;
+            self.button(72, y, 720, labels.get(i), s.selected == i);
+            var color = art.GOLD; if s.selected == i { color = art.INK; }
+            self.big(754 - Str.get_Length(values.get(i)) * 16, y + 18, values.get(i), 2, color);
+        }
+        p.DrawBox(832, 210, 440, 484, 0x142E32);
+        self.big(856, 238, profile.difficultyName(s.prefs.difficulty), 3, art.GOLD);
+        var lives = "5 LIVES"; var scatter = "10 / 8 / 6 TURNS"; var cats = "STALKER 2 / PROWLER 1";
+        if s.prefs.difficulty == 0 { lives = "7 LIVES"; scatter = "14 / 12 / 10 TURNS"; cats = "STALKER 3 / PROWLER 2"; }
+        if s.prefs.difficulty == 2 { lives = "3 LIVES"; scatter = "8 / 6 / 4 TURNS"; }
+        self.big(856, 289, lives, 2, art.PAPER);
+        self.text(856, 337, "CHEESE SCATTER / EARLY TO LATE", art.MUTED);
+        self.big(856, 361, scatter, 2, art.PAPER);
+        self.text(856, 409, "CAT MOVEMENT / TURNS", art.MUTED);
+        self.text(856, 435, cats, art.PAPER);
+        p.DrawLine(856, 467, 1248, 467, 0x53706A);
+        self.text(856, 490, "Difficulty applies to your NEXT heist.", art.PAPER);
+        self.text(856, 516, "Music and effects change immediately.", art.MUTED);
+        self.text(856, 542, "Each difficulty has its own score table.", art.MUTED);
+        self.text(856, 582, "REDUCED MOTION removes fades,", art.MUTED);
+        self.text(856, 606, "sparkles and animated menu details.", art.MUTED);
+        self.text(856, 649, "Preferences save automatically.", art.GOLD);
+        var inputHint = "UP/DOWN SELECT   LEFT/RIGHT CHANGE   ENTER TOGGLE   ESC BACK";
+        if controller { inputHint = "D-PAD / STICK SELECT & CHANGE   A TOGGLE   B BACK"; }
+        self.text(75, 782, inputHint, art.MUTED);
+    }
+    hide func scores(s: session.Session) {
+        self.background("LOCAL HIGH SCORES");
+        for i in 0..3 {
+            var fill = 0x28484A; var color = art.PAPER;
+            if s.scoreTab == i { fill = art.GOLD; color = art.INK; }
+            p.DrawBox(72 + i * 216, 160, 200, 44, fill);
+            self.big(94 + i * 216, 175, profile.difficultyName(i), 2, color);
+        }
+        self.text(846, 177, "TEN LITTLE LEGENDS PER DIFFICULTY", art.MUTED);
+        p.DrawBox(72, 230, 1200, 40, 0x10272C);
+        self.text(96, 246, "RANK", art.MUTED); self.text(200, 246, "MOUSE", art.MUTED);
+        self.text(400, 246, "SCORE", art.MUTED); self.text(650, 246, "ROOMS", art.MUTED);
+        self.text(850, 246, "TURNS", art.MUTED); self.text(1090, 246, "RESULT", art.MUTED);
+        for rank in 0..10 {
+            var y = 276 + rank * 46;
+            if rank % 2 == 0 { p.DrawBox(72, y, 1200, 42, 0x234145); }
+            var color = art.PAPER; if rank == 0 { color = art.GOLD; }
+            self.big(100, y + 13, Fmt.Int(rank + 1), 2, color);
+            var record = s.prefs.entry(s.scoreTab, rank);
+            if record == null {
+                self.text(200, y + 17, "---", art.MUTED); self.text(400, y + 17, "---", art.MUTED);
+            } else {
+                self.big(200, y + 13, record.name, 2, color);
+                self.big(400, y + 13, Fmt.Int(record.points), 2, color);
+                self.big(650, y + 13, Fmt.Int(record.rooms) + "/10", 2, art.PAPER);
+                self.big(850, y + 13, Fmt.Int(record.turns), 2, art.PAPER);
+                var result = "CAUGHT"; if record.won { result = "FEAST!"; }
+                self.big(1090, y + 13, result, 2, color);
+            }
+        }
+        var hint = "100/CHEESE + 1000/ROOM + 250/CAT - 2/TURN. VICTORY: 5000 + 500/LIFE.";
+        if s.prefs.count(s.scoreTab) == 0 { hint = "NO HEISTS RECORDED YET. YOUR NEXT RUN COULD BE THE FIRST LEGEND."; }
+        self.text(75, 753, hint, art.GOLD);
+        var inputHint = "LEFT/RIGHT SWITCH DIFFICULTY   ESC BACK";
+        if controller { inputHint = "D-PAD / STICK SWITCH DIFFICULTY   B BACK"; }
+        self.text(75, 795, inputHint, art.MUTED);
+        p.DrawBox(1100, 780, 172, 44, art.GOLD); self.big(1128, 794, "BACK", 2, art.INK);
+    }
+    hide func nameEntry(s: session.Session) {
+        self.background("MAKE YOUR MARK");
+        self.big(376, 193, "THREE SMALL LETTERS", 4, art.PAPER);
+        self.text(440, 265, "THESE INITIALS APPEAR BESIDE YOUR FUTURE SCORES.", art.MUTED);
+        for i in 0..3 {
+            var fill = 0x28484A; var color = art.PAPER;
+            if i == s.cursor { fill = art.GOLD; color = art.INK; }
+            p.DrawBox(440 + i * 152, 360, 128, 128, fill);
+            self.big(480 + i * 152, 397, Str.Substring(s.draftName, i, 1), 6, color);
+            if i == s.cursor {
+                self.big(486 + i * 152, 325, "+", 2, art.GOLD);
+                self.big(486 + i * 152, 513, "-", 2, art.GOLD);
+            }
+        }
+        self.text(440, 559, "LEFT/RIGHT LETTER   UP/DOWN CHANGE", art.MUTED);
+        self.button(440, 600, 456, "SAVE INITIALS", true);
+        var inputHint = "ENTER SAVE / ESC CANCEL";
+        if controller { inputHint = "A SAVE / B CANCEL"; }
+        self.text(440, 700, inputHint, art.MUTED);
+    }
+    expose func draw(s: session.Session) {
+        if s.mode == session.SETTINGS { self.settings(s); }
+        else if s.mode == session.SCORES { self.scores(s); }
+        else if s.mode == session.INITIALS { self.nameEntry(s); }
+        else { self.mainMenu(s); }
+        if s.prefs.notice != "" { self.text(74, 829, s.prefs.notice, art.RED); }
+    }
+}

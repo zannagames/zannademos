@@ -1,0 +1,38 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/skin_probe.zia
+// Purpose: Verify PNG override loading and generated fallback in an isolated directory.
+// Key invariants:
+//   - Test fixtures are written only in an explicitly supplied scratch directory.
+// Ownership/Lifetime:
+//   - Temporary PNG fixtures belong to the caller's scratch directory.
+// Links: art.zia, assets/README.md
+//===----------------------------------------------------------------------===//
+module skin_probe;
+bind Zanna.Graphics;
+bind Zanna.Terminal as Terminal;
+bind Zanna.System.Environment as Env;
+bind Zanna.IO.Path as Path;
+bind Zanna.IO.File as File;
+bind "./art";
+
+func require(ok: Boolean, message: String) {
+    if !ok { Terminal.Say("FAIL: " + message); Env.Exit(1); }
+}
+func start() {
+    var dir = Env.GetVariable("CATNMOUSE_ASSETS");
+    require(dir != "", "set CATNMOUSE_ASSETS to an empty scratch directory");
+    require(!File.Exists(Path.Join(dir, "mouse.png")) && !File.Exists(Path.Join(dir, "crate.png")),
+            "fixture targets must not exist");
+    var p = Pixels.New(2, 2); p.SetRgba(1, 1, 0xFF000080);
+    require(p.SavePng(Path.Join(dir, "mouse.png")) == 1, "write PNG fixture");
+    File.WriteAllText(Path.Join(dir, "crate.png"), "invalid PNG fixture");
+    var bank = new art.Art();
+    require(bank.overrides == 1, "one PNG override; invalid PNG falls back");
+    require(bank.sprites.get(4).GetRgba(63, 63) == 0xFF000080, "PNG resize preserves RGBA");
+    require(bank.sprites.get(4).GetRgba(0, 0) == 0, "PNG transparent corners preserved");
+    require(bank.sprites.get(2).GetRgba(32, 38) == art.generate(2).GetRgba(32, 38), "corrupt fallback");
+    Terminal.Say("RESULT: ok");
+}

@@ -1,0 +1,56 @@
+//===----------------------------------------------------------------------===//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//===----------------------------------------------------------------------===//
+// File: zannademos/catnmouse/packaging/generate.zia
+// Purpose: Generate the application icon and drag-to-install pixel-art backdrop.
+// Key invariants:
+//   - Artwork is procedural and uses nearest-neighbor sprite scaling.
+//   - Output is restricted to the explicitly supplied packaging directory.
+// Ownership/Lifetime:
+//   - This offline tool owns its temporary pixel surfaces.
+// Links: ../art.zia, package_macos.sh, ../zanna.project
+//===----------------------------------------------------------------------===//
+module generate;
+bind Zanna.Graphics;
+bind Zanna.System.Environment as Env;
+bind Zanna.IO.Path as Path;
+bind Zanna.Terminal as Terminal;
+bind "../art";
+
+func start() {
+    var dir = Env.GetVariable("CATNMOUSE_PACKAGING_OUT");
+    if dir == "" { Terminal.Say("Set CATNMOUSE_PACKAGING_OUT to the packaging directory."); Env.Exit(1); }
+    var icon = RenderTarget2D.New(128, 128);
+    var p = icon.Pixels as Pixels;
+    p.DrawBox(12, 4, 104, 120, art.INK);
+    p.DrawBox(4, 12, 120, 104, art.INK);
+    p.DrawBox(8, 16, 112, 96, 0x28484A);
+    p.DrawBox(16, 8, 96, 112, 0x28484A);
+    p.DrawBox(16, 12, 96, 4, 0x53706A);
+    p.DrawBox(12, 101, 104, 7, 0xC08B59);
+    p.DrawBox(12, 108, 104, 4, 0x805B40);
+    icon.DrawPixels(53, 12, art.generate(5).Scale(64, 64));
+    icon.DrawPixels(7, 49, art.generate(4).Scale(64, 64));
+    icon.DrawPixels(80, 73, art.generate(3).Scale(32, 32));
+    if p.Scale(1024, 1024).SavePng(Path.Join(dir, "icon.png")) != 1 { Env.Exit(1); }
+
+    var target = RenderTarget2D.New(560, 380);
+    p = target.Pixels as Pixels;
+    p.FillColor(0x10272C);
+    p.DrawBox(12, 12, 536, 356, 0x1C393C);
+    p.DrawFrame(12, 12, 536, 356, 0x53706A);
+    p.DrawTextScaled(38, 36, "CAT 'N' MOUSE", 4, art.PAPER);
+    p.DrawText(40, 82, "THE MIDNIGHT CHEESE HEIST", art.GOLD);
+    p.DrawLine(40, 106, 520, 106, 0x53706A);
+    p.DrawText(40, 125, "DRAG THE GAME INTO APPLICATIONS", art.PAPER);
+    // Finder places the application at (180,240), Applications at (420,240).
+    p.DrawBox(288, 234, 28, 8, art.GOLD);
+    p.DrawBox(308, 226, 8, 24, art.GOLD);
+    p.DrawBox(316, 230, 8, 16, art.GOLD);
+    p.DrawBox(324, 234, 8, 8, art.GOLD);
+    p.DrawText(40, 324, "APPLE SILICON  /  macOS 14+", art.MUTED);
+    p.DrawText(40, 343, "FIRST LAUNCH: SEE THE INCLUDED INSTALL GUIDE", art.GOLD);
+    if p.SavePng(Path.Join(dir, "background.png")) != 1 { Env.Exit(1); }
+    Terminal.Say("RESULT: ok");
+}
