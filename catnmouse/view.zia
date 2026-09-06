@@ -8,6 +8,7 @@
 //   - The full board is visible; rendering never mutates simulation state.
 //   - Danger lanes use the same lethal query as the catch rule.
 //   - Sprite interpolation is derived from board ticks plus a caller-supplied phase.
+//   - The caller-supplied effects level gates overlays only; the artwork never changes.
 // Ownership/Lifetime:
 //   - View owns its render target and cached sprite bank for the application.
 // Links: art.zia, rules.zia, rooms.zia, main.zia
@@ -46,13 +47,15 @@ class View {
     hide Integer shownScore;
     /// @brief 1-based leaderboard rank of the run just recorded, or 0; set by the caller.
     expose Integer recordRank;
+    /// @brief Special-effects level (profile.FX_*); set by the caller, FANCY when unset.
+    expose Integer fx;
 
     expose func init() {
         target = RenderTarget2D.New(WIDTH, HEIGHT);
         pixels = target.Pixels as Pixels;
         bank = new art.Art(); phase = 0;
         lastMx = -1; lastMy = -1; fromX = 0; fromY = 0; slideMs = 0; sliding = false;
-        shownScore = -1; recordRank = 0;
+        shownScore = -1; recordRank = 0; fx = profile.FX_FANCY;
     }
     /// @brief Advance presentation-only animation (the mouse slide) by dt ms.
     expose func advance(dt: Integer) {
@@ -97,7 +100,7 @@ class View {
         pixels.DrawBox(0, 0, WIDTH, 2, 0x2E4A4D);
         self.big(32, 20, "CAT 'N' MOUSE", 3, art.PAPER);
         var score = profile.score(g);
-        if g.state != rules.PLAY || shownScore < 0 || shownScore > score { shownScore = score; }
+        if g.state != rules.PLAY || shownScore < 0 || shownScore > score || fx < 1 { shownScore = score; }
         else if shownScore < score { shownScore = shownScore + 1 + (score - shownScore) / 6; if shownScore > score { shownScore = score; } }
         self.text(34, 55, profile.difficultyName(g.difficulty) + "  /  SCORE " + Fmt.Int(shownScore), art.GOLD);
         self.text(34, 74, "GLOWING SENTRIES HUNT / ROAMERS DROP CRATES", art.MUTED);
@@ -178,10 +181,12 @@ class View {
         var py = BY + c.py * art.SIZE + (c.y - c.py) * art.SIZE * elapsed / SLIDE;
         var walking = elapsed < SLIDE;
         var bob = 0; if walking && (elapsed / 50) % 2 == 0 { bob = -2; }
-        if c.kind == 0 && c.searching {
-            target.DrawPixels(px - 16, py - 16 + (g.ticks % 6) / 3, bank.goldHalo);
+        if fx >= 2 {
+            if c.kind == 0 && c.searching {
+                target.DrawPixels(px - 16, py - 16 + (g.ticks % 6) / 3, bank.goldHalo);
+            }
+            if g.state == rules.CAUGHT && g.killer == i { target.DrawPixels(px - 16, py - 16, bank.redHalo); }
         }
-        if g.state == rules.CAUGHT && g.killer == i { target.DrawPixels(px - 16, py - 16, bank.redHalo); }
         if c.hold > 0 && (g.ticks / 2) % 2 == 0 { return; }
         var frame = bank.sprites.get(5 + c.kind);
         if walking && (elapsed / 50) % 2 == 1 { frame = bank.walk.get(1 + c.kind); }
@@ -214,10 +219,10 @@ class View {
         if showLanes && g.state == rules.PLAY { self.lanes(g); }
         if g.exitShown {
             var exX = BX + g.ex * art.SIZE; var exY = BY + g.ey * art.SIZE;
-            target.DrawPixels(exX - 16, exY - 16 + (g.ticks % 8) / 4, bank.greenHalo);
+            if fx >= 2 { target.DrawPixels(exX - 16, exY - 16 + (g.ticks % 8) / 4, bank.greenHalo); }
             self.sprite(9, exX, exY);
             var since = g.ticks - g.exitTick;
-            if since < 12 {
+            if fx >= 1 && since < 12 {
                 pixels.DrawRing(exX + 32, exY + 32, 8 + since * 9, Color.Rgba(168, 216, 163, 220 - since * 18));
                 if since > 2 { pixels.DrawRing(exX + 32, exY + 32, since * 6, Color.Rgba(244, 235, 216, 180 - since * 14)); }
             }
@@ -243,7 +248,9 @@ class View {
         if g.bonus >= 0 {
             var bx = BX + (g.bonus % rules.W) * art.SIZE; var by = BY + (g.bonus / rules.W) * art.SIZE;
             target.DrawPixels(bx, by, bank.stars.get(g.ticks % 8));
-            pixels.DrawRing(bx + 32, by + 34, 24 + (g.ticks % 8) / 2, Color.Rgba(240, 189, 85, 150 - (g.ticks % 8) * 15));
+            if fx >= 2 {
+                pixels.DrawRing(bx + 32, by + 34, 24 + (g.ticks % 8) / 2, Color.Rgba(240, 189, 85, 150 - (g.ticks % 8) * 15));
+            }
         }
         for i in 0..g.cats.length() { if g.cats.get(i).alive { self.catSprite(g, i); } }
         self.trackMouse(g);

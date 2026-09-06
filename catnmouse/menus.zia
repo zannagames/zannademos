@@ -175,9 +175,9 @@ class Menus {
         var music = "OFF"; if s.prefs.music { music = "ON"; }
         var effects = "OFF"; if s.prefs.effects { effects = "ON"; }
         var lanes = "OFF"; if s.prefs.lanes { lanes = "ON"; }
-        var motion = "REDUCED"; if s.prefs.motion { motion = "FULL"; }
-        var labels: List[String] = ["DIFFICULTY", "MUSIC", "SOUND EFFECTS", "LANE ASSIST", "MOTION", "INITIALS", "BACK"];
-        var values: List[String] = [profile.difficultyName(s.prefs.difficulty), music, effects, lanes, motion, s.prefs.name, ""];
+        var fxLabel = profile.fxName(s.prefs.fx);
+        var labels: List[String] = ["DIFFICULTY", "MUSIC", "SOUND EFFECTS", "LANE ASSIST", "SPECIAL EFFECTS", "INITIALS", "BACK"];
+        var values: List[String] = [profile.difficultyName(s.prefs.difficulty), music, effects, lanes, fxLabel, s.prefs.name, ""];
         for i in 0..7 {
             var y = 210 + i * 72;
             self.button(72, y, 720, labels.get(i), s.selected == i);
@@ -196,10 +196,11 @@ class Menus {
         self.text(856, 435, cats, art.PAPER);
         p.DrawLine(856, 467, 1248, 467, 0x53706A);
         self.text(856, 490, "Difficulty applies to your NEXT heist.", art.PAPER);
-        self.text(856, 516, "Music and effects change immediately.", art.MUTED);
+        self.text(856, 516, "Music, sound and effects apply at once.", art.MUTED);
         self.text(856, 542, "Each difficulty has its own score table.", art.MUTED);
-        self.text(856, 582, "REDUCED MOTION removes fades,", art.MUTED);
-        self.text(856, 606, "sparkles and animated menu details.", art.MUTED);
+        self.text(856, 578, "SPECIAL EFFECTS: FANCY keeps every glow,", art.MUTED);
+        self.text(856, 600, "flash, shake and sparkle. SIMPLE drops the", art.MUTED);
+        self.text(856, 622, "heavy full-screen ones. OFF keeps art only.", art.MUTED);
         self.text(856, 649, "Preferences save automatically.", art.GOLD);
         var inputHint = "UP/DOWN SELECT   LEFT/RIGHT CHANGE   ENTER TOGGLE   ESC BACK";
         if controller { inputHint = "D-PAD / STICK SELECT & CHANGE   A TOGGLE   B BACK"; }

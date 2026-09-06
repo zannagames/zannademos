@@ -123,7 +123,7 @@ class Session {
         if selected == 1 { prefs.music = !prefs.music; }
         if selected == 2 { prefs.effects = !prefs.effects; }
         if selected == 3 { prefs.lanes = !prefs.lanes; }
-        if selected == 4 { prefs.motion = !prefs.motion; }
+        if selected == 4 { prefs.fx = (prefs.fx + delta + 3) % 3; }
         if selected == 5 { draftName = prefs.name; cursor = 0; mode = INITIALS; }
         if selected == 6 { self.back(); return; }
         self.save();

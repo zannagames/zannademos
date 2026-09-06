@@ -29,6 +29,11 @@ func start() {
     require(s.command("enter") && s.mode == session.SETTINGS, "settings reachable");
     require(s.command("right") && p.difficulty == 2, "change difficulty");
     require(s.command("down") && s.command("enter") && !p.music && p.effects, "independent music toggle");
+    require(s.command("down") && s.command("down") && s.command("down") && s.selected == 4, "special effects row");
+    require(p.fx == profile.FX_FANCY && s.command("enter") && p.fx == profile.FX_OFF, "effects cycle forward");
+    require(s.command("enter") && p.fx == profile.FX_SIMPLE && s.command("enter") && p.fx == profile.FX_FANCY, "effects cycle wraps");
+    require(s.command("left") && p.fx == profile.FX_SIMPLE, "effects cycle backward");
+    require(s.command("up") && s.command("up") && s.command("up") && s.selected == 1, "back to the music row");
     require(s.command("escape") && s.mode == session.TITLE, "settings back");
     require(s.command("enter") && s.game.lives == 3 && s.game.difficulty == 2 && s.game.interval == 8, "fierce run settings");
     require(s.command("pause") && s.mode == session.PAUSE, "pause");

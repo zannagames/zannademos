@@ -128,14 +128,14 @@ expose func generateFrame(id: Integer, frame: Integer) -> Pixels {
         p.DrawLine(0, 0, 63, 0, 0x8AA39A); p.DrawLine(0, 63, 63, 63, 0x193236);
         p.DrawBox(0, 58, 64, 6, 0x2B4442); p.DrawLine(0, 58, 63, 58, 0x6E8A82);
     } else if id == 2 || id == 11 {
-        var edge = 0x9D623C; var face = 0xC18A52; var frame = 0x704729; var plank = 0xA16A3D;
+        var edge = 0x9D623C; var face = 0xC18A52; var trim = 0x704729; var plank = 0xA16A3D;
         var band = 0xE0AC69; var glint = 0xF2C37F; var top = 0xD9A366;
-        if id == 11 { edge = 0xB08A5C; face = 0xE3C48E; frame = 0x9A7A50; plank = 0xC9A76F; band = 0xF3DFAE; glint = 0xFFF3D0; top = 0xEFD6A6; }
+        if id == 11 { edge = 0xB08A5C; face = 0xE3C48E; trim = 0x9A7A50; plank = 0xC9A76F; band = 0xF3DFAE; glint = 0xFFF3D0; top = 0xEFD6A6; }
         p.DrawBox(9, 10, 52, 52, Color.Rgba(8, 20, 22, 95));
         p.DrawBox(4, 4, 54, 54, edge);
         p.DrawBox(8, 8, 46, 46, face);
         p.DrawBox(4, 4, 54, 6, top);
-        p.DrawFrame(11, 11, 40, 40, frame);
+        p.DrawFrame(11, 11, 40, 40, trim);
         if frame == 2 {
             p.DrawLine(24, 12, 24, 49, plank); p.DrawLine(37, 12, 37, 49, plank);
             p.DrawThickLine(12, 31, 50, 31, 7, band); p.DrawLine(13, 29, 49, 29, glint);
@@ -147,7 +147,7 @@ expose func generateFrame(id: Integer, frame: Integer) -> Pixels {
         for k in 0..4 {
             var nx = 13; if k % 2 == 1 { nx = 49; }
             var ny = 13; if k >= 2 { ny = 49; }
-            p.DrawDisc(nx, ny, 2, frame); p.SetRgb(nx - 1, ny - 1, glint);
+            p.DrawDisc(nx, ny, 2, trim); p.SetRgb(nx - 1, ny - 1, glint);
         }
     } else if id == 3 {
         shadow(p, 32, 52, 22, 5);

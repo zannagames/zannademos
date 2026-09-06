@@ -52,12 +52,14 @@ bulk demo builder currently accepts only `games/`, `apps/`, and `3d/` categories
 build this project directly with the command above. Its checks are registered
 in `zannademos/demo_tests.tsv` and run through the usual demo test runner.
 
-The Reduced Motion setting disables the shake, flashes, wipe, sparkles and fades.
+The SPECIAL EFFECTS setting has three steps: FANCY is everything, SIMPLE drops the
+full-screen passes and the glow halos, and OFF drops the remaining overlays. The
+artwork itself is identical at every level.
 
 ## macOS installer
 
 The Apple silicon package (macOS 14+) is written to
-`../../zannagames/Cat-n-Mouse-1.1.4-macos-arm64.dmg.zip`, alongside the DMG,
+`../../zannagames/Cat-n-Mouse-1.2.0-macos-arm64.dmg.zip`, alongside the DMG,
 checksums and artifact manifest. Unzip, open the DMG, drag the game to
 Applications, then eject the image. No Zanna installation is needed to play.
 
@@ -97,6 +99,7 @@ Intel/universal. A clean downloaded-install test on another Mac remains useful.
 | Restart the room (costs one life) | Backspace / T | Left bumper / L1 |
 | Toggle music | M | Settings menu |
 | Toggle sound effects | N | Settings menu |
+| Special effects level | Settings menu | Settings menu |
 
 Controller labels follow Zanna's standard logical layout. Any connected supported
 controller can operate the game; hot connection is handled by the runtime. Losing
@@ -107,7 +110,7 @@ turns. Menus show controller hints after controller input.
 
 The cats live in real time: the simulation advances in fixed 100 ms ticks while
 the board is live, and pauses in every menu. You move one square per key press.
-Hold a direction to run: the first press moves once, then after a 400 ms pause
+Hold a direction to run: the first press moves once, then after a 250 ms pause
 the mouse keeps moving at ten squares per second until you let go. Invalid
 moves do nothing. A "GET READY" banner marks the 1.5 second grace period at the start of
 every room, after every respawn and after a restart: no cat moves or hunts, and
@@ -186,8 +189,12 @@ rules. The same seed always produces the same rooms in both VM and native builds
 | Fierce | 3 | 0.8 / 0.4 | 8 / 6 / 4 seconds |
 
 Difficulty changes apply to the next heist; the current run keeps its original
-rules. Music, sound effects, lane assistance and reduced motion change immediately.
-Reduced motion removes screen fades, menu motes and event sparkles. Music ducks
+rules. Music, sound effects, lane assistance and the special effects level change
+immediately. SPECIAL EFFECTS has three steps and never changes the artwork: FANCY
+is everything, SIMPLE drops the full-screen passes (screen shake, colour flash, the
+room-clear wipe, the screen fade, the caught vignette) and the glow halos, and OFF
+also drops event sparkles, floating score labels, the exit-reveal rings, the bonus
+pulse ring and the rolling score counter. Menus look the same at every level. Music ducks
 in menus and becomes silent while the window is unfocused. If no audio device is
 available, the game continues silently.
 

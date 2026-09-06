@@ -6,6 +6,8 @@
 # File: zannademos/catnmouse/packaging/package_macos.sh
 # Purpose: Build, ad-hoc sign, verify and zip a drag-to-install macOS DMG.
 # Key invariants:
+#   - The published stem is derived from zanna.project; art.VERSION and INSTALL.txt
+#     must agree with it or the run stops before anything is built.
 #   - Existing published artifacts are never replaced.
 #   - No Gatekeeper settings or quarantine attributes are changed.
 #   - Only this invocation's private temporary directory is cleaned up.
@@ -31,7 +33,31 @@ if [ ! -x "$zanna_bin" ]; then
 fi
 mkdir -p "$output_dir"
 output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
-stem=Cat-n-Mouse-1.1.4-macos-arm64
+# The published stem follows zanna.project, so an artifact can never carry a stale
+# version. art.VERSION (the in-game string) and INSTALL.txt ship inside the package,
+# so a disagreement between any of them is a packaging bug, not a naming detail.
+version=$(sed -n 's/^version[[:space:]][[:space:]]*//p' "$game_root/zanna.project" | head -n 1)
+case "$version" in
+    '' | *[!0-9.]*)
+        printf 'error: no usable version line in %s/zanna.project\n' "$game_root" >&2
+        exit 1
+        ;;
+esac
+art_version=$(sed -n 's/^final VERSION = "\(.*\)";$/\1/p' "$game_root/art.zia" | head -n 1)
+if [ "$art_version" != "$version" ]; then
+    printf 'error: art.VERSION is %s but zanna.project says %s.\n' "$art_version" "$version" >&2
+    exit 1
+fi
+install_version=$(sed -n "s/^CAT 'N' MOUSE //p" "$script_dir/INSTALL.txt" | head -n 1)
+if [ "$install_version" != "$version" ]; then
+    printf 'error: INSTALL.txt names %s but zanna.project says %s.\n' "$install_version" "$version" >&2
+    exit 1
+fi
+stem=Cat-n-Mouse-$version-macos-arm64
+if ! grep -q "$stem.dmg.sha256" "$script_dir/INSTALL.txt"; then
+    printf 'error: INSTALL.txt does not name %s.dmg.sha256.\n' "$stem" >&2
+    exit 1
+fi
 for suffix in .dmg .dmg.sha256 .dmg.manifest.json .dmg.zip .dmg.zip.sha256; do
     if [ -e "$output_dir/$stem$suffix" ]; then
         printf 'error: refusing to replace %s\n' "$output_dir/$stem$suffix" >&2

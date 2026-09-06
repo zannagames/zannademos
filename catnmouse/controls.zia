@@ -5,7 +5,7 @@
 // File: zannademos/catnmouse/controls.zia
 // Purpose: Unify keyboard, D-pad and deliberately latched analog-stick input.
 // Key invariants:
-//   - A held movement input moves once, waits DELAY ms (400), then repeats every PERIOD ms.
+//   - A held movement input moves once, waits DELAY ms (250), then repeats every PERIOD ms.
 //   - A stick reports a held direction the same way a held key does.
 //   - Any connected controller works; a frame produces at most one command.
 // Ownership/Lifetime:
@@ -17,7 +17,7 @@ bind Zanna.Input.Action as Action;
 bind Zanna.Input.Key as Key;
 bind Zanna.Input.Pad as Pad;
 
-final DELAY = 400;
+final DELAY = 250;
 final PERIOD = 100;
 
 /// @brief Pure key-repeat timing: one immediate move, a short pause, then 10 moves per second.

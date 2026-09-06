@@ -8,6 +8,7 @@
 //   - A held direction repeats only while the board is live; menus never advance time.
 //   - Real time advances in whole 100 ms ticks accumulated from the frame clock.
 //   - Every BeginFrame is paired with Flip; focus loss pauses gameplay.
+//   - Board effects follow the profile SPECIAL EFFECTS level; the title motes never do.
 // Ownership/Lifetime:
 //   - App owns the board, view, canvas and optional sound bank for one run.
 // Links: DESIGN.md, README.md, rules.zia, view.zia
@@ -66,7 +67,8 @@ class App {
         canvas = Canvas.New("Cat 'n' Mouse - The Midnight Cheese Heist", view.WIDTH, view.HEIGHT);
         canvas.SetFps(60); canvas.SetMaxDeltaTime(100);
         input = new controls.Controls(); audio = new sound.Audio();
-        transition = 180; particles = 0; particleKind = 0; animation = 0;
+        transition = 0; if flow.prefs.fx >= 2 { transition = 180; }
+        particles = 0; particleKind = 0; animation = 0;
         tickMs = 0; label = 0; labelX = 0; labelY = 0; labelText = "";
         shake = 0; flash = 0; flashColor = art.PAPER; wipe = 0; particleX = 0; particleY = 0;
         mouseX = Mouse.X(); mouseY = Mouse.Y();
@@ -79,7 +81,7 @@ class App {
            flow.mode == session.INITIALS {
             front.draw(flow);
         } else {
-            screen.phase = tickMs; screen.recordRank = flow.lastRank;
+            screen.phase = tickMs; screen.recordRank = flow.lastRank; screen.fx = flow.prefs.fx;
             screen.draw(flow.game, flow.mode, flow.prefs.lanes, !flow.prefs.music);
             screen.inputHints(input.lastPad, flow.mode, flow.game);
             if flow.prefs.notice != "" {
@@ -116,7 +118,7 @@ class App {
 
     /// @brief Screen-shake offset for this frame, derived from the animation clock (no RNG).
     hide func jitter(axis: Integer) -> Integer {
-        if shake <= 0 || !flow.prefs.motion { return 0; }
+        if shake <= 0 { return 0; }
         var amp = 2 + shake / 120;
         var n = (animation / 16 + axis * 7) % 4;
         if n == 0 { return amp; } if n == 1 { return 0 - amp; } if n == 2 { return amp / 2; }
@@ -124,14 +126,8 @@ class App {
     }
 
     hide func accents(dt: Integer) {
-        if !flow.prefs.motion { transition = 0; particles = 0; shake = 0; flash = 0; wipe = 0; return; }
         animation = (animation + dt) % 4000;
-        if shake > 0 { shake = shake - dt; if shake < 0 { shake = 0; } }
-        if flow.mode == session.GAME && flow.game.state == rules.CAUGHT {
-            var pulse = 70 + ((animation / 40) % 20) * 4;
-            canvas.BoxAlpha(0, 0, view.WIDTH, 40, art.RED, pulse); canvas.BoxAlpha(0, view.HEIGHT - 40, view.WIDTH, 40, art.RED, pulse);
-            canvas.BoxAlpha(0, 40, 28, view.HEIGHT - 80, art.RED, pulse); canvas.BoxAlpha(view.WIDTH - 28, 40, 28, view.HEIGHT - 80, art.RED, pulse);
-        }
+        // The front end is not part of the effects budget; its motes always drift.
         if flow.mode == session.TITLE {
             var step = animation / 160;
             for i in 0..9 {
@@ -139,6 +135,16 @@ class App {
                 var y = 148 + (i * 71 + step * 2) % 566;
                 canvas.BoxAlpha(x, y, 3, 3, art.GOLD, 55 + (i % 3) * 25);
             }
+        }
+        // Clearing the timers here leaves every block below untouched at lower levels.
+        var level = flow.prefs.fx;
+        if level < 1 { particles = 0; label = 0; }
+        if level < 2 { shake = 0; flash = 0; wipe = 0; transition = 0; }
+        if shake > 0 { shake = shake - dt; if shake < 0 { shake = 0; } }
+        if level >= 2 && flow.mode == session.GAME && flow.game.state == rules.CAUGHT {
+            var pulse = 70 + ((animation / 40) % 20) * 4;
+            canvas.BoxAlpha(0, 0, view.WIDTH, 40, art.RED, pulse); canvas.BoxAlpha(0, view.HEIGHT - 40, view.WIDTH, 40, art.RED, pulse);
+            canvas.BoxAlpha(0, 40, 28, view.HEIGHT - 80, art.RED, pulse); canvas.BoxAlpha(view.WIDTH - 28, 40, 28, view.HEIGHT - 80, art.RED, pulse);
         }
         if particles > 0 && flow.mode == session.GAME {
             particles = particles - dt;
@@ -188,19 +194,22 @@ class App {
     hide func feedback() {
         audio.play(flow.event, flow.prefs.effects);
         var e = flow.event;
-        if e == 1 || (e >= 2 && e <= 4) || e == 8 || e == 9 || e == 10 || e == 11 || e == 12 || e == 13 {
+        var level = flow.prefs.fx;
+        if level >= 1 && (e == 1 || (e >= 2 && e <= 4) || e == 8 || e == 9 || e == 10 || e == 11 || e == 12 || e == 13) {
             particles = 400; particleKind = e;
             particleX = flow.game.mx; particleY = flow.game.my;
             if (e == 3 || e == 9 || e == 11 || e == 12 || e == 13) && flow.game.eventX >= 0 {
                 particleX = flow.game.eventX; particleY = flow.game.eventY;
             }
         }
-        if e == 10 { shake = 260; }
-        if e == 4 { shake = 420; flash = 200; flashColor = art.RED; }
-        if e == 3 { flash = 120; flashColor = art.PAPER; }
-        if e == 9 { flash = 160; flashColor = art.GREEN; }
-        if e == 5 && flow.game.state == rules.MAP { wipe = 600; }
-        if e == 2 || e == 8 || e == 3 {
+        if level >= 2 {
+            if e == 10 { shake = 260; }
+            if e == 4 { shake = 420; flash = 200; flashColor = art.RED; }
+            if e == 3 { flash = 120; flashColor = art.PAPER; }
+            if e == 9 { flash = 160; flashColor = art.GREEN; }
+            if e == 5 && flow.game.state == rules.MAP { wipe = 600; }
+        }
+        if level >= 1 && (e == 2 || e == 8 || e == 3) {
             label = 700; labelText = "+100"; if e == 8 { labelText = "+300"; } if e == 3 { labelText = "+250"; }
             labelX = view.BX + flow.game.mx * art.SIZE - 16; labelY = view.BY + flow.game.my * art.SIZE - 24;
             if e == 3 { labelX = view.BX + 600; labelY = view.BY + 100; }
@@ -260,7 +269,7 @@ class App {
                 redraw = true;
             } else { tickMs = 0; }
             if redraw {
-                if previousMode != flow.mode { transition = 180; }
+                if previousMode != flow.mode && flow.prefs.fx >= 2 { transition = 180; }
                 self.render();
             }
             audio.configure(flow.prefs.music, canvas.IsFocused(), flow.mode != session.GAME);

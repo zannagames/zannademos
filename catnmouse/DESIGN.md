@@ -92,7 +92,7 @@ the game from turn-based to real time and settled the following rules:
   cat (random covered cell with no lane to the mouse, hold = GRACE); sentries
   never move. Crates, collected cheese, the bonus and the turn counter persist.
   Cheese at the refuge is collected on arrival. No refuge ends the campaign.
-- Held movement repeats: one immediate move, a 400 ms pause, then one move every
+- Held movement repeats: one immediate move, a 250 ms pause, then one move every
   100 ms while the key, D-pad or stick direction stays held (`controls.Repeater`).
   Repeat is only produced while the board is live, never in menus or dialogs.
 
@@ -107,6 +107,15 @@ variants, eight star rotations, 24 px roster icons, halos and per-theme floors
 (`retheme(theme)` runs only when the room theme changes). PNG-skinned sprites keep
 a single frame. `sound.Audio` switches between the menu tune and the heist loop in
 `configure()` and plays MusicGen stings for room start, death and the exit reveal.
+
+The SPECIAL EFFECTS level (`profile.fx`, FANCY / SIMPLE / OFF) gates per-frame effect
+work only; no level changes the art. SIMPLE drops the full-screen passes — shake and
+the extra clear it forces, colour flash, the room-clear wipe, the mode-change fade,
+the CAUGHT vignette — and the pre-blurred glow halos. OFF also drops particles,
+floating score labels, the exit-reveal rings, the bonus pulse ring and the score
+tally ramp. `main.App.accents` clears the timers a level cannot use so each drawing
+block no-ops on its own; `view.View.fx` carries the level into the board pass. The
+title motes belong to the front end and draw at every level.
 
 ## Implementation sequence
 
@@ -130,8 +139,8 @@ See README for exact difficulty values, scoring, persistence paths and controls.
 ## Configuration and errors
 
 No feature toggle is required: this is an independently launched demo. Defaults:
-1344 by 872 window, 64px tiles, Classic difficulty, music/effects/motion on,
-lane assistance on, initials `MOU`. The 1280 by 704
+1344 by 872 window, 64px tiles, Classic difficulty, music and sound effects on,
+special effects `FANCY`, lane assistance on, initials `MOU`. The 1280 by 704
 board sits below a compact status bar. L toggles lanes,
 M toggles music, N toggles effects, P/Escape pauses, H opens help. Pause/help do
 not spend turns. Settings save immediately but difficulty applies only to the next
