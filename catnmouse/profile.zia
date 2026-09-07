@@ -6,7 +6,6 @@
 // Purpose: Persist preferences and ten local high scores per difficulty.
 // Key invariants:
 //   - Loaded values are validated; failed writes preserve in-memory progress.
-//   - A profile without an effects level migrates from the retired MOTION flag.
 //   - Leaderboards separate difficulty levels and keep stable score ordering.
 // Ownership/Lifetime:
 //   - Profile owns its SaveData and score records for the application lifetime.
@@ -20,14 +19,6 @@ bind "./rules";
 
 expose func difficultyName(n: Integer) -> String {
     if n == 0 { return "COZY"; } if n == 2 { return "FIERCE"; } return "CLASSIC";
-}
-
-/// @brief Special-effects levels: OFF keeps the art only, SIMPLE drops the full-screen work.
-final FX_OFF = 0;
-final FX_SIMPLE = 1;
-final FX_FANCY = 2;
-expose func fxName(n: Integer) -> String {
-    if n == 0 { return "OFF"; } if n == 1 { return "SIMPLE"; } return "FANCY";
 }
 expose func clamp(n: Integer, low: Integer, high: Integer) -> Integer {
     if n < low { return low; } if n > high { return high; } return n;
@@ -69,13 +60,13 @@ class Profile {
     expose Boolean music;
     expose Boolean effects;
     expose Boolean lanes;
-    expose Integer fx;
+    expose Boolean motion;
     expose String name;
     expose String notice;
 
     expose func init(key: String) {
         store = SaveData.New(key); records = [];
-        difficulty = 1; music = true; effects = true; lanes = true; fx = FX_FANCY;
+        difficulty = 1; music = true; effects = true; lanes = true; motion = true;
         name = "MOU"; notice = "";
     }
     expose func count(level: Integer) -> Integer {
@@ -114,14 +105,7 @@ class Profile {
         if !store.Load() { notice = "Profile unreadable. Using defaults for this session."; return false; }
         difficulty = clamp(store.GetInt("difficulty", 1), 0, 2);
         music = store.GetInt("music", 1) != 0; effects = store.GetInt("effects", 1) != 0;
-        lanes = store.GetInt("lanes", 1) != 0;
-        // Profiles written before the effects levels carry MOTION: REDUCED becomes OFF.
-        var fxLevel = store.GetInt("fx", -1);
-        if fxLevel < 0 || fxLevel > 2 {
-            fxLevel = FX_FANCY;
-            if store.GetInt("motion", 1) == 0 { fxLevel = FX_OFF; }
-        }
-        fx = fxLevel;
+        lanes = store.GetInt("lanes", 1) != 0; motion = store.GetInt("motion", 1) != 0;
         name = initials(store.GetString("initials", "MOU"));
         records.clear();
         var count = clamp(store.GetInt("record_count", 0), 0, 30);
@@ -140,10 +124,10 @@ class Profile {
         return true;
     }
     expose func save() -> Boolean {
-        store.Clear(); store.SetInt("version", 2);
+        store.Clear(); store.SetInt("version", 1);
         store.SetInt("difficulty", difficulty); store.SetInt("music", flag(music));
         store.SetInt("effects", flag(effects)); store.SetInt("lanes", flag(lanes));
-        store.SetInt("fx", fx); store.SetString("initials", name);
+        store.SetInt("motion", flag(motion)); store.SetString("initials", name);
         store.SetInt("record_count", records.length());
         for i in 0..records.length() {
             var r = records.get(i); var p = "r" + Fmt.Int(i) + "_";

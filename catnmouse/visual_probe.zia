@@ -64,22 +64,11 @@ func start() {
     g.collected = 12; g.cheese.clear(); g.revealExit(); v.draw(g, 0, true, false); save(v, "exit-shown");
     g.state = rules.CAUGHT; g.killer = 0; v.draw(g, 0, true, false); save(v, "caught");
     g.state = rules.PLAY; g.killer = -1;
-    // Every effects level renders the same board geometry; only the overlays differ.
-    var levels: List[String] = ["board-fx-off", "board-fx-simple", "board-fx-fancy"];
-    for level in 0..3 {
-        v.fx = level; v.draw(g, 0, true, false);
-        require(v.pixels.Width == view.WIDTH && v.pixels.Height == view.HEIGHT, "effects level frame dimensions");
-        save(v, levels.get(level));
-    }
-    v.fx = profile.FX_FANCY;
     var prefs = new profile.Profile("catnmouse-preview");
     var flow = new session.Session(173, prefs, false);
     var front = new menus.Menus(v);
     front.draw(flow); save(v, "menu");
     flow.mode = session.SETTINGS; front.draw(flow); save(v, "settings");
-    prefs.fx = profile.FX_SIMPLE; front.draw(flow); save(v, "settings-fx-simple");
-    prefs.fx = profile.FX_OFF; front.draw(flow); save(v, "settings-fx-off");
-    prefs.fx = profile.FX_FANCY;
     flow.mode = session.SCORES; front.draw(flow); save(v, "scores-empty");
     // Demonstration records exist only in this screenshot probe's memory.
     prefs.add(new profile.Record("ACE", 31540, 10, 480, 1, true));

@@ -8,7 +8,7 @@
 //   - Missing audio support or devices never prevent playing the game.
 //   - Music and effects have independent switches; focus loss silences music.
 // Ownership/Lifetime:
-//   - Audio owns two songs (menu, heist), one sound bank, and the active looping voice.
+//   - Audio owns one song, one sound bank, and the song's looping voice.
 // Links: main.zia, profile.zia, docs/zannalib/audio.md
 //===----------------------------------------------------------------------===//
 module sound;
@@ -16,38 +16,6 @@ bind Zanna.Audio;
 
 func note(song: MusicGen, channel: Integer, at: Integer, pitch: Integer, duration: Integer) {
     var _ = song.AddNote(channel, at, pitch, duration);
-}
-
-/// @brief A short melodic sting: one lead voice, one note per 100 ticks.
-func sting(notes: List[Integer], tempo: Integer, waveform: Integer) -> Sound {
-    var song = MusicGen.New(tempo);
-    var lead = song.AddChannel(waveform);
-    song.SetEnvelope(lead, 2, 80, 20, 120); song.SetChannelVolume(lead, 40);
-    for i in 0..notes.length() { note(song, lead, i * 100, notes.get(i), 90); }
-    song.Length = notes.length() * 100 + 100; song.SetLoopable(false); return song.Build();
-}
-
-/// @brief The heist loop: faster, lower and more insistent than the menu tune.
-func buildHeist() -> Sound {
-    var song = MusicGen.New(128);
-    var lead = song.AddChannel(1); var bass = song.AddChannel(3); var tick = song.AddChannel(0);
-    song.SetEnvelope(lead, 2, 90, 14, 110); song.SetChannelVolume(lead, 40); song.SetPan(lead, 12);
-    song.SetEnvelope(bass, 3, 70, 30, 80); song.SetChannelVolume(bass, 34);
-    song.SetEnvelope(tick, 1, 30, 4, 30); song.SetChannelVolume(tick, 12); song.SetDuty(tick, 12); song.SetPan(tick, -20);
-    var roots: List[Integer] = [40, 40, 43, 43, 38, 38, 41, 47];
-    var melody: List[Integer] = [64, 67, 71, 67, 64, 62, 64, 59,
-        67, 71, 74, 71, 67, 66, 67, 62, 62, 65, 69, 65,
-        62, 60, 62, 57, 65, 69, 72, 69, 71, 69, 66, 64];
-    for bar in 0..8 {
-        var root = roots.get(bar); var at = bar * 400;
-        note(song, bass, at, root, 90); note(song, bass, at + 150, root, 40);
-        note(song, bass, at + 200, root + 7, 90); note(song, bass, at + 300, root + 5, 90);
-        for beat in 0..4 {
-            note(song, lead, at + beat * 100, melody.get(bar * 4 + beat), 55);
-            note(song, tick, at + beat * 100 + 50, root + 36, 12);
-        }
-    }
-    song.Length = 3200; song.SetLoopable(true); return song.Build();
 }
 
 /// @brief An original eight-bar, swung minor-key chiptune, generated once.
@@ -76,44 +44,37 @@ func buildMusic() -> Sound {
 class Audio {
     hide SoundBank bank;
     hide Sound music;
-    hide Sound heist;
     hide Integer voice;
-    hide Boolean playingHeist;
     expose Boolean ready;
 
     expose func init() {
-        voice = -1; ready = false; music = null; heist = null; bank = null; playingHeist = false;
+        voice = -1; ready = false; music = null; bank = null;
         if !Mixer.IsAvailable() || Mixer.Init() == 0 { return; }
         bank = SoundBank.New();
         self.register("push", Synth.Sweep(150, 80, 80, 3));
         self.register("cheese", Synth.Sweep(780, 1400, 100, 0));
         self.register("capture", Synth.Sweep(380, 1500, 200, 1));
-        self.register("death", sting([67, 63, 60, 55, 48], 150, 1));
-        self.register("clear", sting([60, 64, 67, 72, 76, 79], 190, 0));
+        self.register("death", Synth.Sweep(540, 100, 300, 2));
+        self.register("clear", Synth.Sweep(600, 1800, 280, 0));
         self.register("menu", Synth.Tone(700, 35, 3));
         self.register("blocked", Synth.Tone(120, 60, 3));
         self.register("bonus", Synth.Sweep(900, 1800, 160, 0));
-        self.register("exit", sting([64, 68, 71, 76, 71, 76, 83], 200, 0));
+        self.register("exit", Synth.Sweep(400, 1200, 220, 1));
         self.register("spotted", Synth.Tone(200, 40, 2));
         self.register("drop", Synth.Sweep(220, 90, 70, 3));
         self.register("escape", Synth.Sweep(500, 900, 120, 1));
-        music = buildMusic(); heist = buildHeist(); ready = true;
+        music = buildMusic(); ready = true;
     }
     hide func register(name: String, effect: Sound) {
         if effect != null { var _ = bank.RegisterSound(name, effect); }
     }
-    /// @brief Menus play the pantry tune; live play switches to the heist loop.
     expose func configure(enabled: Boolean, focused: Boolean, paused: Boolean) {
-        if !ready || music == null || heist == null { return; }
+        if !ready || music == null { return; }
         if !enabled { if voice > 0 { Voice.Stop(voice); voice = -1; } return; }
         var volume = 25;
-        if paused { volume = 18; } if !focused { volume = 0; }
-        var wantHeist = !paused;
-        if voice > 0 && wantHeist != playingHeist { Voice.Stop(voice); voice = -1; }
-        if voice < 0 {
-            playingHeist = wantHeist;
-            if wantHeist { voice = heist.PlayLoopGroup(volume, 0, 0); } else { voice = music.PlayLoopGroup(volume, 0, 0); }
-        } else { Voice.SetVolume(voice, volume); }
+        if paused { volume = 16; } if !focused { volume = 0; }
+        if voice < 0 { voice = music.PlayLoopGroup(volume, 0, 0); }
+        else { Voice.SetVolume(voice, volume); }
     }
     expose func play(event: Integer, enabled: Boolean) {
         if !ready || !enabled { return; }

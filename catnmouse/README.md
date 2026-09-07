@@ -11,14 +11,8 @@ pixels per cell**. The entire 1280 × 704 board stays visible in a 1344 × 872
 window, with status above and controls below.
 
 The presentation is pixel art throughout: crisp sprites, bitmap lettering,
-stepped shapes, animated pixel details and nearest-neighbor scaling. The mouse
-and cats walk with two-frame cycles and blink when idle, the star spins, the exit
-glows and pulses when it appears, rooms use four floor themes (pantry tiles, wood,
-flagstone, attic boards) with three crate designs, and every room opens with a
-title card. Being spotted shakes the screen behind a red vignette, captures and
-the exit flash, clearing a room wipes to the house map, and the HUD shows a live
-cat roster and a rolling score. Everything is generated in code, including the
-pantry tune for menus, the faster heist loop during play, and the sound effects.
+stepped shapes, animated pixel details and nearest-neighbor scaling. Everything
+is generated in code, including the original looping chiptune and sound effects.
 Optional PNGs can replace individual sprites without changing game code. No
 downloads or external libraries are required.
 
@@ -52,14 +46,10 @@ bulk demo builder currently accepts only `games/`, `apps/`, and `3d/` categories
 build this project directly with the command above. Its checks are registered
 in `zannademos/demo_tests.tsv` and run through the usual demo test runner.
 
-The SPECIAL EFFECTS setting has three steps: FANCY is everything, SIMPLE drops the
-full-screen passes and the glow halos, and OFF drops the remaining overlays. The
-artwork itself is identical at every level.
-
 ## macOS installer
 
 The Apple silicon package (macOS 14+) is written to
-`../../zannagames/Cat-n-Mouse-1.2.0-macos-arm64.dmg.zip`, alongside the DMG,
+`../../zannagames/Cat-n-Mouse-1.1.5-macos-arm64.dmg.zip`, alongside the DMG,
 checksums and artifact manifest. Unzip, open the DMG, drag the game to
 Applications, then eject the image. No Zanna installation is needed to play.
 
@@ -89,7 +79,7 @@ Intel/universal. A clean downloaded-install test on another Mac remains useful.
 | Action | Keyboard | Controller |
 | --- | --- | --- |
 | Move / navigate | Arrows or WASD | D-pad or left stick |
-| Wait in place (spends no turn) | Space | X / Square |
+| Wait one turn | Space | X / Square |
 | Confirm / continue | Enter | A / Cross |
 | Back / cancel / pause | Escape | B / Circle |
 | Pause / resume | P | Start / Options |
@@ -99,7 +89,6 @@ Intel/universal. A clean downloaded-install test on another Mac remains useful.
 | Restart the room (costs one life) | Backspace / T | Left bumper / L1 |
 | Toggle music | M | Settings menu |
 | Toggle sound effects | N | Settings menu |
-| Special effects level | Settings menu | Settings menu |
 
 Controller labels follow Zanna's standard logical layout. Any connected supported
 controller can operate the game; hot connection is handled by the runtime. Losing
@@ -127,9 +116,7 @@ between searches they are harmless, on a random timer of 2 to 5 seconds idle and
 1.5 to 3 seconds searching. Blue stalkers and violet prowlers wander at random,
 avoiding immediate reversals, and cannot push crates. Every 14 to 24 steps a
 wanderer drops a fresh pale crate on the square it just left. Drops never land on
-cheese, the bonus, the exit or you, never cut you off from any remaining cheese,
-the bonus or the exit, never leave you without a free neighbour, and stop entirely
-once **40 crates** are on the board (placed and dropped together).
+cheese, the bonus, the exit or you, and never seal any of those in completely.
 A gold corner badge means a cat is standing on cheese.
 
 A wandering cat enclosed on all four sides by crates or walls is removed for good
@@ -148,37 +135,17 @@ it then appears on a floor square you can walk to.
 
 On Classic, you have five lives for the entire campaign. Deaths preserve moved
 crates, surviving cats, collected cheese and the turn counter. Enter drops you
-on a random covered square from which every remaining cheese is still reachable,
-scatters every roaming cat to a random covered spot of its own (sentries stay
-where they are), and grants a fresh grace period. If
+on a random covered square and grants a fresh grace period. Every cat keeps
+its current position. If
 no refuge remains, the run ends. Surrender uses the same process. If crates have boxed the cheese in,
-Backspace offers a restart: it costs one life and rebuilds the room with new
-cheese, bonus and cat positions. Every room is generated fresh each time it
-is entered or restarted, and your remaining lives carry forward. There are no saved checkpoints. An ending
+Backspace offers a restart: it costs one life and restores the same initial
+crates, cheese, bonus and cat positions. Each new level randomizes crate and enemy
+starting positions once, retaining the protected entrance and level enemy mix.
+All initial floor cells are connected. Cats still roam and crates can still be
+pushed during play; deaths never reroll the board. On entering the next level,
+your remaining lives carry forward. There are no saved checkpoints. An ending
 records your score; Enter opens the high-score board and Escape returns to the
 main menu, where you can begin a new campaign.
-
-## Generated rooms
-
-No room has a fixed layout. Every time a room is entered or restarted, `rooms.zia`
-generates it from the campaign seed: between 14 + room and 18 + room crates (room 1
-is 14–18, room 10 is 23–27), the mouse's start, and every cat's position and
-kind. The enemy recipe follows the difficulty curve (room 1: two sentries; room 2:
-one sentry and one stalker; room 3: one sentry and two stalkers; rooms 4–6: three
-roamers, prowlers joining from room 5; rooms 7–10: four roamers, prowler-heavy
-but always with at least one stalker).
-
-A generated room is accepted only when it passes the playability contract:
-every floor square can be walked to from the start without pushing anything (so
-all twelve cheese, the bonus and any future exit square are reachable), no cat
-has a clear lane to the start, every cat sits at least five squares from the
-mouse and three from each other, no roaming cat begins boxed, crates never form
-a solid 2 × 2 block or sit in a corner, and the total is within the 40-crate cap.
-The generator makes up to 24 attempts; if none passes it repairs the last one
-deterministically by opening crates between disconnected regions and rehoming
-offending cats, so generation always terminates. `generator_probe.zia` checks
-480 seeded rooms, the repair path, and 5,400 ticks of random play against these
-rules. The same seed always produces the same rooms in both VM and native builds.
 
 ## Settings and high scores
 
@@ -189,19 +156,15 @@ rules. The same seed always produces the same rooms in both VM and native builds
 | Fierce | 3 | 0.8 / 0.4 | 8 / 6 / 4 seconds |
 
 Difficulty changes apply to the next heist; the current run keeps its original
-rules. Music, sound effects, lane assistance and the special effects level change
-immediately. SPECIAL EFFECTS has three steps and never changes the artwork: FANCY
-is everything, SIMPLE drops the full-screen passes (screen shake, colour flash, the
-room-clear wipe, the screen fade, the caught vignette) and the glow halos, and OFF
-also drops event sparkles, floating score labels, the exit-reveal rings, the bonus
-pulse ring and the rolling score counter. Menus look the same at every level. Music ducks
+rules. Music, sound effects, lane assistance and reduced motion change immediately.
+Reduced motion removes screen fades, menu motes and event sparkles. Music ducks
 in menus and becomes silent while the window is unfocused. If no audio device is
 available, the game continues silently.
 
 Set your three-letter initials in Settings. Each completed or failed campaign
 is recorded once, with separate top-ten lists for each difficulty. Tied scores
 keep their existing order. The score is 100 per cheese, 1,000 per cleared room,
-250 per captured cat, 300 per bonus, minus 2 per turn (waiting is free), with a floor of zero. Victory adds 5,000
+250 per captured cat, 300 per bonus, minus 2 per turn, with a floor of zero. Victory adds 5,000
 plus 500 per remaining life. Abandoning a live run does not submit a score.
 
 Preferences and scores save atomically through `SaveData` under the `catnmouse`
@@ -218,7 +181,7 @@ See [assets/README.md](assets/README.md) for the twelve PNG names, transparency,
 dimensions and search order. Set `CATNMOUSE_ASSETS` to use a separate skin
 directory. Missing or unreadable sprites use the generated defaults.
 
-Rules live in `rules.zia`; the room generator, titles, enemy recipe and
+Rules live in `rules.zia`; random crate and enemy placement, titles, enemy mixes and
 bonus intervals are in `rooms.zia`. Rendering is in `view.zia`; artwork is in
 `art.zia`. `session.zia` coordinates menus and campaign state; `menus.zia` draws
 the front end; `profile.zia` owns preferences and scores; `controls.zia` unifies
@@ -240,7 +203,6 @@ and acceptance scenarios.
 ./build/src/tools/zanna/zanna run zannademos/catnmouse -- --screenshot /tmp/catnmouse-menu.png --screen menu
 ./build/src/tools/zanna/zanna run zannademos/catnmouse/rules_probe.zia
 ./build/src/tools/zanna/zanna run zannademos/catnmouse/campaign_probe.zia
-./build/src/tools/zanna/zanna run zannademos/catnmouse/generator_probe.zia
 ./build/src/tools/zanna/zanna run zannademos/catnmouse/visual_probe.zia
 ./build/src/tools/zanna/zanna run zannademos/catnmouse/session_probe.zia
 ./build/src/tools/zanna/zanna run zannademos/catnmouse/controls_probe.zia
@@ -267,7 +229,7 @@ with `catnmouse-test-`. The probe refuses an existing save, verifies atomic
 preferences/score round trips and corrupt-data recovery, and leaves its isolated
 fixture in the platform's application-data directory. It needs write access there.
 
-The checks cover room generation and repair, the crate cap, drop safety, sightline occlusion, legal/illegal pushes, grace and hold
+The checks cover sightline occlusion, legal/illegal pushes, grace and hold
 periods, sentry searching, random roaming and crate drops, escape/capture,
 the catch walk, persistent room state, respawn failure, static cheese, bonus
 hops, hidden/revealed exits, restarts, deterministic randomness, room
@@ -278,8 +240,8 @@ recording, controller bindings, analog hysteresis, and persistent settings.
 ## Verified and release testing
 
 Verified on macOS: native build with `-Wall -Werror`, native window/audio smoke,
-all seven registered demo checks, PNG replacement/alpha/fallback, profile persistence
-and corruption recovery, and matching VM/native campaign trace `367593261`.
+all six registered demo checks, PNG replacement/alpha/fallback, profile persistence
+and corruption recovery, and matching VM/native campaign trace `158328625`.
 The repository's 2,024-test run completed; its twelve sandbox-related failures
 passed when rerun with the required filesystem/network/window access. Runtime
 surface audit, platform policy lint and cross-platform smoke scripts also passed.

@@ -46,8 +46,6 @@ class Session {
     hide Integer backMode;
     hide Integer helpBack;
     hide Integer quitBack;
-    /// @brief 1-based rank of the last recorded run on its difficulty board, or 0.
-    expose Integer lastRank;
 
     expose func init(seed: Integer, settings: profile.Profile, writeProfile: Boolean) {
         game = new rules.Board(); prefs = settings; nextSeed = seed; persist = writeProfile;
@@ -55,7 +53,7 @@ class Session {
         mode = TITLE; selected = 0; scoreTab = prefs.difficulty;
         cursor = 0; draftName = prefs.name; event = 0;
         active = false; running = true; recorded = false;
-        backMode = TITLE; helpBack = TITLE; quitBack = TITLE; lastRank = 0;
+        backMode = TITLE; helpBack = TITLE; quitBack = TITLE;
     }
     expose func save() { if persist { var _ = prefs.save(); } }
     expose func begin() {
@@ -65,17 +63,11 @@ class Session {
         if game.difficulty == 2 { game.maxLives = 3; }
         game.lives = game.maxLives; game.totalTurns = 0; game.captures = 0; game.bonuses = 0;
         game.seed = nextSeed; nextSeed = (nextSeed + 1) % 2147483647;
-        rooms.load(game, 0); mode = GAME; active = true; recorded = false; event = 5; lastRank = 0;
+        rooms.load(game, 0); mode = GAME; active = true; recorded = false; event = 5;
     }
     expose func finish() {
         if (game.state == rules.OVER || game.state == rules.WON) && !recorded && active {
             prefs.recordRun(game); self.save(); recorded = true; active = false;
-            lastRank = 0;
-            var points = profile.score(game);
-            for rank in 0..10 {
-                var r = prefs.entry(game.difficulty, rank);
-                if r != null && r.points == points && r.turns == game.totalTurns && lastRank == 0 { lastRank = rank + 1; }
-            }
         }
     }
     expose func focusLost() -> Boolean {
@@ -123,7 +115,7 @@ class Session {
         if selected == 1 { prefs.music = !prefs.music; }
         if selected == 2 { prefs.effects = !prefs.effects; }
         if selected == 3 { prefs.lanes = !prefs.lanes; }
-        if selected == 4 { prefs.fx = (prefs.fx + delta + 3) % 3; }
+        if selected == 4 { prefs.motion = !prefs.motion; }
         if selected == 5 { draftName = prefs.name; cursor = 0; mode = INITIALS; }
         if selected == 6 { self.back(); return; }
         self.save();
@@ -179,8 +171,7 @@ class Session {
         }
         if mode == RESTART {
             if action != "enter" { return false; }
-            var room = game.room;
-            if game.restart() { rooms.load(game, room); }
+            if game.restart() { rooms.reload(game); }
             mode = GAME; event = 4; self.finish(); return true;
         }
         if self.menuCount() > 0 {

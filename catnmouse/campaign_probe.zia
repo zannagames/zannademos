@@ -3,10 +3,9 @@
 // See LICENSE for license information.
 //===----------------------------------------------------------------------===//
 // File: zannademos/catnmouse/campaign_probe.zia
-// Purpose: Validate authored topology and deterministic state across seeded real-time runs.
+// Purpose: Validate generated topology and deterministic state across seeded real-time runs.
 // Key invariants:
 //   - Crates never cover cheese, the bonus or the exit; the exit is reachable when shown.
-//   - The crate cap holds at every observed state.
 //   - VM and native execution emit the same state trace for all actions and ticks.
 // Ownership/Lifetime:
 //   - Each run owns a fresh board; flood queues are local to a room check.
@@ -46,8 +45,7 @@ func reachable(g: rules.Board, tx: Integer, ty: Integer) -> Boolean {
 func valid(g: rules.Board) {
     require(g.tile(g.mx, g.my) == 0 && g.catAt(g.mx, g.my) < 0, "mouse occupies floor");
     require(g.collected >= 0 && g.collected <= 12, "collection bounds");
-    require(g.crateCount() <= rules.MAX_CRATES, "crate cap");
-    require(g.cheese.length() + g.collected == 12, "cheese conservation in authored rooms");
+    require(g.cheese.length() + g.collected == 12, "cheese conservation in generated rooms");
     for i in 0..g.cats.length() {
         var c = g.cats.get(i);
         if c.alive {
@@ -80,6 +78,28 @@ func start() {
         for sample in 1..9 {
             var g = new rules.Board(); g.seed = sample * 173; rooms.load(g, room);
             valid(g);
+            require(rooms.connected(g), "all initial floor cells are connected");
+            var original: List[Integer] = [];
+            for i in 0..g.tiles.length() { original.add(g.tiles.get(i)); }
+            var initialCats: List[Integer] = [];
+            for i in 0..g.cats.length() { var c = g.cats.get(i); initialCats.add(c.y * rules.W + c.x); }
+            var initialCheese: List[Integer] = [];
+            for i in 0..g.cheese.length() { initialCheese.add(g.cheese.get(i)); }
+            var initialBonus = g.bonus;
+            g.setTile(5, 5, 3); g.cats.get(0).x = 5; g.collected = 8;
+            g.seed = g.seed + 17; var currentSeed = g.seed;
+            rooms.reload(g);
+            require(g.seed == currentSeed && g.collected == 0 && g.bonus == initialBonus, "retry restores setup without rewinding campaign RNG");
+            for i in 0..original.length() { require(g.tiles.get(i) == original.get(i), "retry restores original crate layout"); }
+            for i in 0..initialCats.length() { var c = g.cats.get(i); require(c.y * rules.W + c.x == initialCats.get(i), "retry restores original enemy positions"); }
+            for i in 0..initialCheese.length() { require(g.cheese.get(i) == initialCheese.get(i), "retry restores original cheese"); }
+            var other = new rules.Board(); other.seed = sample * 173 + 1; rooms.load(other, room);
+            var changed = false;
+            for i in 0..original.length() { if other.tiles.get(i) != original.get(i) { changed = true; } }
+            require(changed, "new seed produces a different crate layout");
+            changed = false;
+            for i in 0..initialCats.length() { var c = other.cats.get(i); if c.y * rules.W + c.x != initialCats.get(i) { changed = true; } }
+            require(changed, "new seed produces different enemy positions");
             var count = g.liveCats(); g.capture();
             require(g.liveCats() == count, "no cat begins already captured");
             var moves = sample * 83;

@@ -21,7 +21,7 @@ bind "./session";
 bind "./profile";
 bind "./rules";
 
-/// @brief Return an actionable row/tab, 100 for a screen's confirm/back button, 101 for cancel.
+/// @brief Return an actionable row/tab, or 100 for the screen's back/done button.
 expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
     if mode == session.TITLE || mode == session.PAUSE {
         if x >= 72 && x < 502 && y >= 388 && y < 708 {
@@ -31,7 +31,7 @@ expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
     }
     if mode == session.SETTINGS {
         if x >= 72 && x < 792 && y >= 210 && y < 714 {
-            if (y - 210) % 72 < 52 { return (y - 210) / 72; }
+            if (y - 210) % 72 < 56 { return (y - 210) / 72; }
         }
     }
     if mode == session.SCORES {
@@ -45,16 +45,6 @@ expose func hit(mode: Integer, x: Integer, y: Integer) -> Integer {
             return (x - 440) / 152;
         }
         if x >= 440 && x < 896 && y >= 600 && y < 656 { return 100; }
-    }
-    // Dialog panels: 100 confirms (Enter), 101 cancels (Escape). Text rows are 16 px per glyph.
-    if mode == session.HELP {
-        if x >= 260 && x < 500 && y >= 596 && y < 632 { return 100; }
-    }
-    if mode == session.SURRENDER || mode == session.QUIT || mode == session.RESTART {
-        var split = 556; if mode == session.QUIT { split = 476; } if mode == session.RESTART { split = 524; }
-        if y >= 518 && y < 554 && x >= 260 && x < 900 {
-            if x < split { return 100; } return 101;
-        }
     }
     return -1;
 }
@@ -137,7 +127,7 @@ class Menus {
         self.text(771, 784, "THE HOUSE IS WATCHING. MAKE YOUR MOVE.", art.MUTED);
     }
     hide func mainMenu(s: session.Session) {
-        self.background("VERSION " + art.VERSION + " / LOCAL");
+        self.background("VERSION 1.1 / LOCAL");
         if s.mode == session.PAUSE {
             self.big(72, 166, "IN COVER", 5, art.PAPER);
             self.text(74, 229, "THE ROOM WAITS FOR YOU.", art.GOLD);
@@ -175,9 +165,9 @@ class Menus {
         var music = "OFF"; if s.prefs.music { music = "ON"; }
         var effects = "OFF"; if s.prefs.effects { effects = "ON"; }
         var lanes = "OFF"; if s.prefs.lanes { lanes = "ON"; }
-        var fxLabel = profile.fxName(s.prefs.fx);
-        var labels: List[String] = ["DIFFICULTY", "MUSIC", "SOUND EFFECTS", "LANE ASSIST", "SPECIAL EFFECTS", "INITIALS", "BACK"];
-        var values: List[String] = [profile.difficultyName(s.prefs.difficulty), music, effects, lanes, fxLabel, s.prefs.name, ""];
+        var motion = "REDUCED"; if s.prefs.motion { motion = "FULL"; }
+        var labels: List[String] = ["DIFFICULTY", "MUSIC", "SOUND EFFECTS", "LANE ASSIST", "MOTION", "INITIALS", "BACK"];
+        var values: List[String] = [profile.difficultyName(s.prefs.difficulty), music, effects, lanes, motion, s.prefs.name, ""];
         for i in 0..7 {
             var y = 210 + i * 72;
             self.button(72, y, 720, labels.get(i), s.selected == i);
@@ -196,11 +186,10 @@ class Menus {
         self.text(856, 435, cats, art.PAPER);
         p.DrawLine(856, 467, 1248, 467, 0x53706A);
         self.text(856, 490, "Difficulty applies to your NEXT heist.", art.PAPER);
-        self.text(856, 516, "Music, sound and effects apply at once.", art.MUTED);
+        self.text(856, 516, "Music and effects change immediately.", art.MUTED);
         self.text(856, 542, "Each difficulty has its own score table.", art.MUTED);
-        self.text(856, 578, "SPECIAL EFFECTS: FANCY keeps every glow,", art.MUTED);
-        self.text(856, 600, "flash, shake and sparkle. SIMPLE drops the", art.MUTED);
-        self.text(856, 622, "heavy full-screen ones. OFF keeps art only.", art.MUTED);
+        self.text(856, 582, "REDUCED MOTION removes fades,", art.MUTED);
+        self.text(856, 606, "sparkles and animated menu details.", art.MUTED);
         self.text(856, 649, "Preferences save automatically.", art.GOLD);
         var inputHint = "UP/DOWN SELECT   LEFT/RIGHT CHANGE   ENTER TOGGLE   ESC BACK";
         if controller { inputHint = "D-PAD / STICK SELECT & CHANGE   A TOGGLE   B BACK"; }

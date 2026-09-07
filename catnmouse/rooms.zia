@@ -3,23 +3,16 @@
 // See LICENSE for license information.
 //===----------------------------------------------------------------------===//
 // File: zannademos/catnmouse/rooms.zia
-// Purpose: Generate every room at random from the campaign seed and prove it playable.
+// Purpose: Generate the ten rooms and their linear campaign metadata.
 // Key invariants:
 //   - Only the boundary is fixed; every interior block is a pushable crate.
-//   - Every accepted room is one connected floor region from the mouse, the entrance is
-//     covered, no cat starts boxed, and the crate count is within the room's range.
-//   - Generation is bounded: GEN_ATTEMPTS full attempts, then a deterministic repair.
+//   - No cat can see the entrance when a room begins; a grace period follows.
 // Ownership/Lifetime:
-//   - Layout construction mutates the supplied board, retaining campaign lives and RNG.
-// Links: rules.zia, generator_probe.zia, DESIGN.md
+//   - Layout construction mutates the supplied board, retaining campaign lives.
+// Links: rules.zia, DESIGN.md
 //===----------------------------------------------------------------------===//
 module rooms;
 bind "./rules";
-
-final GEN_ATTEMPTS = 24;
-final MIN_CAT_GAP = 3;
-final MIN_START_GAP = 5;
-final CRATE_SPAN = 5;
 
 expose func name(n: Integer) -> String {
     if n == 0 { return "THE PANTRY"; }
@@ -36,202 +29,94 @@ expose func name(n: Integer) -> String {
 
 expose func hint(n: Integer) -> String {
     if n == 0 { return "Sentries glow when they search. Stay out of their lanes."; }
-    if n == 1 { return "Box in the roaming cat after the cheese to open the exit."; }
+    if n == 1 { return "Box in the blue stalker after the cheese to open the exit."; }
     if n == 2 { return "Grab the star bonus before it hops elsewhere."; }
-    if n == 3 { return "Three roaming cats now. Box them all in after the cheese."; }
-    if n == 4 { return "Violet prowlers wander faster. Keep cover close."; }
+    if n == 3 { return "Two blue cats now. Box them both in after the cheese."; }
+    if n == 4 { return "Purple prowlers wander faster. Keep cover close."; }
     if n == 5 { return "A safe passage now may become a firing lane."; }
-    if n == 6 { return "Four cats roam. Every one of them must go."; }
+    if n == 6 { return "Every roaming cat must go. Sentries can stay."; }
     if n == 7 { return "The exit only appears once the cheese is done."; }
-    if n == 8 { return "More crates, tighter lanes. Every push leaves a lasting mark."; }
+    if n == 8 { return "Fewer crates. Every push leaves a lasting mark."; }
     return "Twelve cheese. Four cats. One last way out.";
 }
 
-/// @brief Fewest crates the generator places in room n; the most is this plus CRATE_SPAN - 1.
-expose func minCrates(n: Integer) -> Integer { return 14 + n; }
-expose func sentries(n: Integer) -> Integer { if n == 0 { return 2; } if n <= 2 { return 1; } return 0; }
-expose func roamers(n: Integer) -> Integer { if n == 0 { return 0; } if n == 1 { return 1; } if n == 2 { return 2; } if n <= 5 { return 3; } return 4; }
-
-/// @brief Roamer kinds for room n, drawn from the room's pool; rooms 7+ always keep one stalker.
-func roamerKinds(g: rules.Board, n: Integer) -> List[Integer] {
-    var kinds: List[Integer] = [];
-    var count = roamers(n);
-    for _ in 0..count {
-        var kind = 1;
-        if n >= 7 { kind = 2; if g.random(3) == 0 { kind = 1; } }
-        else if n >= 4 { kind = 1 + g.random(2); }
-        kinds.add(kind);
-    }
-    if n >= 7 && count > 0 {
-        var hasStalker = false;
-        for i in 0..kinds.length() { if kinds.get(i) == 1 { hasStalker = true; } }
-        if !hasStalker { kinds.set(0, 1); }
-    }
-    return kinds;
-}
-
-/// @brief True when placing a crate at (x, y) would complete a 2x2 block of crates and walls.
-expose func blob(g: rules.Board, x: Integer, y: Integer) -> Boolean {
-    for cx in x - 1..x + 1 {
-        for cy in y - 1..y + 1 {
-            var solid = 0;
-            for ox in 0..2 {
-                for oy in 0..2 {
-                    if (cx + ox == x && cy + oy == y) || g.tile(cx + ox, cy + oy) != 0 { solid = solid + 1; }
-                }
+/// @brief Floor connectivity keeps initial cheese and bonus positions reachable.
+expose func connected(g: rules.Board) -> Boolean {
+    var seen: List[Integer] = [];
+    for _ in 0..rules.W * rules.H { seen.add(0); }
+    var queue: List[Integer] = [g.my * rules.W + g.mx];
+    seen.set(queue.get(0), 1); var head = 0;
+    while head < queue.length() {
+        var pos = queue.get(head); head = head + 1;
+        for d in 0..4 {
+            var x = pos % rules.W + rules.dx(d); var y = pos / rules.W + rules.dy(d);
+            if g.tile(x, y) == 0 && seen.get(y * rules.W + x) == 0 {
+                seen.set(y * rules.W + x, 1); queue.add(y * rules.W + x);
             }
-            if solid == 4 { return true; }
         }
     }
-    return false;
-}
-
-func corner(x: Integer, y: Integer) -> Boolean {
-    return (x == 1 || x == rules.W - 2) && (y == 1 || y == rules.H - 2);
-}
-
-/// @brief Scatter crates: random interior cells, never a corner, never a 2x2 blob.
-func placeCrates(g: rules.Board, wanted: Integer) {
-    var target = wanted;
-    if target > rules.MAX_CRATES { target = rules.MAX_CRATES; }
-    var cells: List[Integer] = [];
-    for y in 1..rules.H - 1 {
-        for x in 1..rules.W - 1 { if !corner(x, y) { cells.add(y * rules.W + x); } }
-    }
-    var placed = 0;
-    while placed < target && cells.length() > 0 {
-        var index = g.random(cells.length());
-        var pos = cells.get(index);
-        cells.set(index, cells.get(cells.length() - 1)); cells.removeAt(cells.length() - 1);
-        var x = pos % rules.W; var y = pos / rules.W;
-        if !blob(g, x, y) { g.setTile(x, y, 2); placed = placed + 1; }
-    }
-}
-
-func distance(x0: Integer, y0: Integer, x1: Integer, y1: Integer) -> Integer {
-    return rules.abs(x0 - x1) + rules.abs(y0 - y1);
-}
-
-/// @brief Whether (x, y) is an acceptable home for a cat of the given kind.
-func catSpot(g: rules.Board, x: Integer, y: Integer, kind: Integer) -> Boolean {
-    if g.tile(x, y) != 0 || g.catAt(x, y) >= 0 || (x == g.mx && y == g.my) { return false; }
-    if distance(x, y, g.mx, g.my) < MIN_START_GAP || g.clear(x, y, g.mx, g.my) { return false; }
-    var need = 1; if kind != 0 { need = 2; }
-    if g.freeNeighbors(x, y, -1, -1) < need { return false; }
-    for i in 0..g.cats.length() {
-        var c = g.cats.get(i);
-        if distance(x, y, c.x, c.y) < MIN_CAT_GAP { return false; }
-    }
+    for y in 1..rules.H - 1 { for x in 1..rules.W - 1 {
+        if g.tile(x, y) == 0 && seen.get(y * rules.W + x) == 0 { return false; }
+    } }
     return true;
 }
 
-func placeCat(g: rules.Board, kind: Integer) -> Boolean {
+func cat(g: rules.Board, kind: Integer) {
     var cells: List[Integer] = [];
-    for y in 1..rules.H - 1 {
-        for x in 1..rules.W - 1 { if catSpot(g, x, y, kind) { cells.add(y * rules.W + x); } }
-    }
-    if cells.length() == 0 { return false; }
+    for y in 2..rules.H - 1 { for x in 2..rules.W - 1 {
+        if g.tile(x, y) == 0 && g.catAt(x, y) < 0 && !g.clear(x, y, g.mx, g.my) {
+            var spaced = true;
+            for i in 0..g.cats.length() {
+                var c = g.cats.get(i);
+                if rules.abs(c.x - x) + rules.abs(c.y - y) < 3 { spaced = false; }
+            }
+            if spaced { cells.add(y * rules.W + x); }
+        }
+    } }
     var pos = cells.get(g.random(cells.length()));
     g.addCat(pos % rules.W, pos / rules.W, kind);
-    return true;
 }
 
-/// @brief One full attempt with a crate target: crates, then the mouse, then every cat.
-/// False if a cat had no acceptable home.
-func build(g: rules.Board, n: Integer, crates: Integer) -> Boolean {
+/// @brief Restore this level's initial setup without rerolling it or rewinding campaign randomness.
+expose func reload(g: rules.Board) {
+    var currentSeed = g.seed;
+    g.seed = g.layoutSeed;
+    load(g, g.room);
+    g.seed = currentSeed;
+}
+
+/// @brief Generate once on level entry, preserving the seed for explicit retries.
+expose func load(g: rules.Board, n: Integer) {
+    g.layoutSeed = g.seed;
     g.clearRoom(); g.room = n;
-    placeCrates(g, crates);
-    var starts: List[Integer] = [];
-    for y in 1..rules.H - 1 {
-        for x in 1..rules.W - 1 {
-            if g.tile(x, y) == 0 && g.freeNeighbors(x, y, -1, -1) >= 2 { starts.add(y * rules.W + x); }
-        }
-    }
-    if starts.length() == 0 { return false; }
-    var start = starts.get(g.random(starts.length()));
-    g.mx = start % rules.W; g.my = start / rules.W;
-    for _ in 0..sentries(n) { if !placeCat(g, 0) { return false; } }
-    var kinds = roamerKinds(g, n);
-    for i in 0..kinds.length() { if !placeCat(g, kinds.get(i)) { return false; } }
-    return true;
-}
-
-/// @brief The playability contract every accepted room satisfies.
-expose func validate(g: rules.Board) -> Boolean {
-    if g.tile(g.mx, g.my) != 0 || g.freeNeighbors(g.mx, g.my, -1, -1) < 2 { return false; }
-    if !g.connected() || g.exposed(g.mx, g.my) { return false; }
-    if g.crateCount() > rules.MAX_CRATES { return false; }
-    for y in 1..rules.H - 1 {
-        for x in 1..rules.W - 1 {
-            if g.tile(x, y) >= 2 && (corner(x, y) || blob(g, x, y)) { return false; }
-        }
-    }
-    for i in 0..g.cats.length() {
-        var c = g.cats.get(i);
-        if g.tile(c.x, c.y) != 0 { return false; }
-        var need = 1; if c.kind != 0 { need = 2; }
-        if g.freeNeighbors(c.x, c.y, -1, -1) < need { return false; }
-        if distance(c.x, c.y, g.mx, g.my) < MIN_START_GAP { return false; }
-        for j in 0..i {
-            var o = g.cats.get(j);
-            if distance(c.x, c.y, o.x, o.y) < MIN_CAT_GAP { return false; }
-        }
-    }
-    return true;
-}
-
-/// @brief Deterministic repair for a rejected attempt: open the floor until it is one region,
-/// then rehome any cat that can see or crowd the entrance. Bounded by the crate count.
-expose func repair(g: rules.Board) {
-    var budget = g.crateCount();
-    while budget > 0 && !g.connected() {
-        var seen = g.flood(g.mx, g.my);
-        var removed = false;
-        for y in 1..rules.H - 1 {
-            if removed { break; }
-            for x in 1..rules.W - 1 {
-                if g.tile(x, y) < 2 { continue; }
-                var touchesSeen = false; var touchesUnseen = false;
-                for d in 0..4 {
-                    var nx = x + rules.dx(d); var ny = y + rules.dy(d);
-                    if g.tile(nx, ny) == 0 {
-                        if seen.get(ny * rules.W + nx) == 1 { touchesSeen = true; } else { touchesUnseen = true; }
-                    }
-                }
-                if touchesSeen && touchesUnseen { g.setTile(x, y, 0); removed = true; break; }
-            }
-        }
-        if !removed { break; }
-        budget = budget - 1;
-    }
-    for i in 0..g.cats.length() {
-        var c = g.cats.get(i);
-        var bad = g.clear(c.x, c.y, g.mx, g.my) || distance(c.x, c.y, g.mx, g.my) < MIN_START_GAP;
-        if !bad && c.kind != 0 && g.freeNeighbors(c.x, c.y, -1, -1) < 2 { bad = true; }
-        if bad { var _ = g.respawn(i); c.hold = 0; }
-    }
-}
-
-/// @brief Generate room n with at most `attempts` full tries before repairing the last one.
-expose func generate(g: rules.Board, n: Integer, attempts: Integer) {
-    var ok = false; var tries = 0;
-    while !ok && tries < attempts {
-        ok = build(g, n, minCrates(n) + g.random(CRATE_SPAN)) && validate(g);
-        tries = tries + 1;
-    }
-    if !ok {
-        // Sparser boards always leave room for every cat; then open the floor and rehome cats.
-        if !build(g, n, minCrates(n) / 2) { var _ = build(g, n, 0); }
-        repair(g);
+    // Keep the familiar protected entrance and v1.1.4 crate-count curve.
+    g.setTile(3, 1, 2); g.setTile(1, 3, 2);
+    var cells: List[Integer] = [];
+    for y in 2..rules.H - 1 { for x in 2..rules.W - 1 { cells.add(y * rules.W + x); } }
+    var placed = 0; var target = 18 - n / 2;
+    while placed < target && cells.length() > 0 {
+        var index = g.random(cells.length()); var pos = cells.get(index);
+        cells.set(index, cells.get(cells.length() - 1)); cells.removeAt(cells.length() - 1);
+        g.setTile(pos % rules.W, pos / rules.W, 2);
+        if connected(g) { placed = placed + 1; }
+        else { g.setTile(pos % rules.W, pos / rules.W, 0); }
     }
     g.mustClear = n >= 1;
     g.interval = 10;
     if n >= 3 { g.interval = 8; } if n >= 7 { g.interval = 6; }
     if g.difficulty == 0 { g.interval = g.interval + 4; }
     if g.difficulty == 2 { g.interval = g.interval - 2; }
-    g.countdown = g.interval * 10;
+    var kind = 0;
+    if n >= 1 { kind = 1; } if n >= 7 { kind = 2; }
+    cat(g, kind);
+    var second = 0;
+    if n >= 3 { second = 1; }
+    cat(g, second);
+    if n >= 2 {
+        var third = 1; if n >= 4 { third = 2; }
+        cat(g, third);
+    }
+    if n >= 6 { cat(g, 1); }
+
     g.scatter(); g.placeBonus(); g.event = 0; g.message = hint(n);
 }
-
-/// @brief Construct the room; every crate, cat and pickup comes from campaign randomness.
-expose func load(g: rules.Board, n: Integer) { generate(g, n, GEN_ATTEMPTS); }

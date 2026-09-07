@@ -29,11 +29,6 @@ func start() {
     require(s.command("enter") && s.mode == session.SETTINGS, "settings reachable");
     require(s.command("right") && p.difficulty == 2, "change difficulty");
     require(s.command("down") && s.command("enter") && !p.music && p.effects, "independent music toggle");
-    require(s.command("down") && s.command("down") && s.command("down") && s.selected == 4, "special effects row");
-    require(p.fx == profile.FX_FANCY && s.command("enter") && p.fx == profile.FX_OFF, "effects cycle forward");
-    require(s.command("enter") && p.fx == profile.FX_SIMPLE && s.command("enter") && p.fx == profile.FX_FANCY, "effects cycle wraps");
-    require(s.command("left") && p.fx == profile.FX_SIMPLE, "effects cycle backward");
-    require(s.command("up") && s.command("up") && s.command("up") && s.selected == 1, "back to the music row");
     require(s.command("escape") && s.mode == session.TITLE, "settings back");
     require(s.command("enter") && s.game.lives == 3 && s.game.difficulty == 2 && s.game.interval == 8, "fierce run settings");
     require(s.command("pause") && s.mode == session.PAUSE, "pause");
@@ -49,7 +44,6 @@ func start() {
     s.game.lives = 3; s.game.totalTurns = 100; s.game.captures = 4;
     s.finish(); s.finish();
     require(p.count(2) == 1 && p.entry(2, 0).points == 29300 && !s.active, "score and exactly-once record");
-    require(s.lastRank == 1, "first record ranks first");
     require(s.command("enter") && s.mode == session.SCORES && s.scoreTab == 2, "ending opens own difficulty scores");
     require(s.command("escape") && s.mode == session.TITLE && s.command("enter"), "new campaign from title");
     require(s.game.lives == 7 && s.game.interval == 14 && s.game.cadence(1) == 11 && s.game.cadence(2) == 8, "cozy rules");
@@ -66,6 +60,18 @@ func start() {
     require(s.command("escape") && s.mode == session.GAME && s.game.lives == lives, "restart cancel");
     require(s.command("restart") && s.command("enter") && s.mode == session.GAME, "restart confirms");
     require(s.game.lives == lives - 1 && s.game.state == rules.PLAY && s.game.collected == 0 && s.game.grace == rules.GRACE, "restart costs a life and rebuilds");
+    var expected = new rules.Board(); expected.seed = s.game.layoutSeed;
+    expected.difficulty = s.game.difficulty; rooms.load(expected, s.game.room);
+    for i in 0..expected.tiles.length() { require(s.game.tiles.get(i) == expected.tiles.get(i), "session restart restores original layout"); }
+    for i in 0..expected.cats.length() {
+        require(s.game.cats.get(i).x == expected.cats.get(i).x && s.game.cats.get(i).y == expected.cats.get(i).y, "session restart restores original enemies");
+    }
+    var nextSeed = s.game.seed;
+    s.game.room = 1; s.game.state = rules.MAP;
+    require(s.command("enter") && s.game.state == rules.PLAY && s.game.layoutSeed == nextSeed, "next level generates with current campaign seed");
+    var different = false;
+    for i in 0..expected.tiles.length() { if s.game.tiles.get(i) != expected.tiles.get(i) { different = true; } }
+    require(different, "next level has a new layout");
     rooms.load(s.game, 9); require(s.game.interval == 10, "late cozy timer");
     require(s.command("pause") && s.command("down") && s.command("enter"), "return settings");
     s.selected = 5; require(s.command("enter") && s.mode == session.INITIALS, "initials editor");
@@ -79,10 +85,5 @@ func start() {
     require(menus.hit(session.TITLE, 80, 400) == 0 && menus.hit(session.TITLE, 80, 445) == -1, "menu hit regions exclude gaps");
     require(menus.hit(session.SETTINGS, 100, 655) == 6 && menus.hit(session.SCORES, 1140, 800) == 100, "settings/back hit regions");
     require(menus.hit(session.INITIALS, 580, 400) == -1, "initials gap is not interactive");
-    require(menus.hit(session.SETTINGS, 100, 264) == -1, "settings gap is not interactive");
-    require(menus.hit(session.SURRENDER, 300, 530) == 100 && menus.hit(session.SURRENDER, 700, 530) == 101, "surrender dialog buttons");
-    require(menus.hit(session.QUIT, 300, 530) == 100 && menus.hit(session.QUIT, 520, 530) == 101, "quit dialog buttons");
-    require(menus.hit(session.RESTART, 400, 530) == 100 && menus.hit(session.RESTART, 600, 530) == 101, "restart dialog buttons");
-    require(menus.hit(session.HELP, 300, 610) == 100 && menus.hit(session.HELP, 300, 400) == -1, "help back button");
     Terminal.Say("RESULT: ok");
 }

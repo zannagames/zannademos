@@ -33,14 +33,14 @@ func start() {
     require(stick.sample(0.0, 0.0) == "" && stick.sample(-1.0, 0.0) == "left", "negative X left");
     var r = new controls.Repeater();
     require(r.feed("down", false, 16) == "down", "first press moves at once");
-    require(r.feed("", true, 120) == "" && r.feed("", true, 120) == "", "pause before repeating");
-    require(r.feed("", true, 20) == "down" && r.running, "repeat starts after the delay");
-    require(r.feed("", true, 60) == "" && r.feed("", true, 50) == "down", "repeats every period while held");
+    require(r.feed("", true, 200) == "" && r.feed("", true, 49) == "", "no repeat before 250 ms");
+    require(r.feed("", true, 1) == "down" && r.running, "repeat starts at 250 ms");
+    require(r.feed("", true, 99) == "" && r.feed("", true, 1) == "down", "repeats every 100 ms while held");
     var count = 0; for _ in 0..60 { if r.feed("", true, 16) == "down" { count = count + 1; } }
     require(count >= 9 && count <= 10, "about ten moves per second");
     require(r.feed("", false, 16) == "" && r.held == "" && r.feed("", true, 500) == "", "release stops repeating");
     require(r.feed("left", true, 16) == "left" && !r.running && r.feed("", true, 249) == "", "new press restarts the delay");
-    require(r.feed("", true, 1) == "left" && r.running, "the hold delay is exactly 250 ms");
+    require(r.feed("", true, 1) == "left" && r.running, "new direction repeats at 250 ms");
     var input = new controls.Controls();
     require(!input.lastPad && !input.disconnected, "initial input state");
     require(Action.KeyBoundTo(Key.W) == "catnmouse_up" && Action.KeyBoundTo(Key.Up) == "catnmouse_up", "WASD and arrow movement");
