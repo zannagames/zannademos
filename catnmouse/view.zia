@@ -303,8 +303,8 @@ class View {
             self.panel("THE ART OF STAYING HIDDEN", "Cats roam in real time. You move one square per key press.");
             self.text(260, 335, "ARROWS / WASD   Move one square. Walk into a crate to push it.", art.INK);
             self.text(260, 359, "Cats see along rows and columns. Crates stop their gaze.", art.INK);
-            self.text(260, 383, "Amber sentries stay put and only hunt while they GLOW.", art.INK);
-            self.text(260, 407, "Blue and violet cats wander and drop a crate every few steps.", art.INK);
+            self.text(260, 383, "Black sentries stay put and only hunt while they GLOW.", art.INK);
+            self.text(260, 407, "Tan and violet cats wander and drop a crate every few steps.", art.INK);
             self.text(260, 431, "After the cheese, box EVERY wandering cat on four sides to open the exit.", art.INK);
             self.text(260, 455, "Box one in earlier and it simply finds another way in.", art.INK);
             self.text(260, 479, "The star bonus hops around on a timer. Cheese stays where it spawned.", art.INK);

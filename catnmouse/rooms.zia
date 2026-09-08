@@ -29,9 +29,9 @@ expose func name(n: Integer) -> String {
 
 expose func hint(n: Integer) -> String {
     if n == 0 { return "Sentries glow when they search. Stay out of their lanes."; }
-    if n == 1 { return "Box in the blue stalker after the cheese to open the exit."; }
+    if n == 1 { return "Box in the tan stalker after the cheese to open the exit."; }
     if n == 2 { return "Grab the star bonus before it hops elsewhere."; }
-    if n == 3 { return "Two blue cats now. Box them both in after the cheese."; }
+    if n == 3 { return "Two tan cats now. Box them both in after the cheese."; }
     if n == 4 { return "Purple prowlers wander faster. Keep cover close."; }
     if n == 5 { return "A safe passage now may become a firing lane."; }
     if n == 6 { return "Every roaming cat must go. Sentries can stay."; }

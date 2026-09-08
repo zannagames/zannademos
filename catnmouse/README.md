@@ -11,10 +11,11 @@ pixels per cell**. The entire 1280 × 704 board stays visible in a 1344 × 872
 window, with status above and controls below.
 
 The presentation is pixel art throughout: crisp sprites, bitmap lettering,
-stepped shapes, animated pixel details and nearest-neighbor scaling. Everything
-is generated in code, including the original looping chiptune and sound effects.
-Optional PNGs can replace individual sprites without changing game code. No
-downloads or external libraries are required.
+stepped shapes, animated pixel details and nearest-neighbor scaling. The tiles,
+the UI, the original looping chiptune and every sound effect are generated in
+code; the mouse and the three cats ship as 64 x 64 PNG portraits in `assets/`.
+Any sprite, shipped or generated, can be replaced by dropping a PNG in without
+changing game code. No downloads or external libraries are required.
 
 ![Cat 'n' Mouse pixel-art menu](preview.png)
 
@@ -111,9 +112,9 @@ Entering a hunting cat's lane, or having one wander into yours, starts the catch
 your controls lock, the cat walks square by square to you, and only then do you
 lose a life. The cat returns to where it spotted you.
 
-Amber sentries never move and cannot be removed. They only hunt while they glow;
+Black sentries never move and cannot be removed. They only hunt while they glow;
 between searches they are harmless, on a random timer of 2 to 5 seconds idle and
-1.5 to 3 seconds searching. Blue stalkers and violet prowlers wander at random,
+1.5 to 3 seconds searching. Tan stalkers and violet prowlers wander at random,
 avoiding immediate reversals, and cannot push crates. Every 14 to 24 steps a
 wanderer drops a fresh pale crate on the square it just left. Drops never land on
 cheese, the bonus, the exit or you, and never seal any of those in completely.
@@ -176,6 +177,12 @@ notice and preserve playable in-memory state. Scores shown by the real game star
 empty; the visual probe uses explicitly isolated sample records for screenshots.
 
 ## Artwork and customization
+
+The four characters ship as 64 x 64 PNGs in `assets/`: `mouse.png`, the black
+`cat_sentry.png`, the tan `cat_stalker.png`, and `cat_prowler.png`, which
+`tools/make_skins.zia` derives from the stalker by rotating its fur to violet
+while keeping lightness, alpha and the blue eyes. Every other sprite is drawn in
+code by `art.zia`, which also stands in for any character PNG that is missing.
 
 See [assets/README.md](assets/README.md) for the twelve PNG names, transparency,
 dimensions and search order. Set `CATNMOUSE_ASSETS` to use a separate skin
