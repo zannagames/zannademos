@@ -51,7 +51,7 @@ in `zannademos/demo_tests.tsv` and run through the usual demo test runner.
 ## macOS installer
 
 The Apple silicon package (macOS 14+) is written to
-`../../zannagames/Cat-n-Mouse-1.1.6-macos-arm64.dmg.zip`, alongside the DMG,
+`../../zannagames/Cat-n-Mouse-1.1.7-macos-arm64.dmg.zip`, alongside the DMG,
 checksums and artifact manifest. Unzip, open the DMG, drag the game to
 Applications, then eject the image. No Zanna installation is needed to play.
 
