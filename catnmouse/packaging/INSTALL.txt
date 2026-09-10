@@ -1,4 +1,4 @@
-CAT 'N' MOUSE 1.1.5
+CAT 'N' MOUSE 1.1.6
 The Midnight Cheese Heist
 
 Requires an Apple silicon Mac (M1 or later), macOS 14 Sonoma or later.
@@ -56,7 +56,7 @@ Uninstall by moving only the app to Trash. This preserves your scores.
 
 VERIFY
 The accompanying .dmg.sha256 file verifies the disk image:
-  shasum -a 256 -c Cat-n-Mouse-1.1.5-macos-arm64.dmg.sha256
+  shasum -a 256 -c Cat-n-Mouse-1.1.6-macos-arm64.dmg.sha256
 An integrity checksum is not proof of the publisher's identity. This build
 does not claim automatic Gatekeeper approval or Apple notarization.
 

@@ -201,20 +201,58 @@ func start() {
     require(g.cheese.get(0) == first, "restart preserves initial placements");
     g.lives = 1; require(!g.restart() && g.state == rules.OVER, "restart on the last life ends the run");
 
+    // Campaign roster: the ten-level cat table is stated once in rooms.zia.
+    var wantSentry: List[Integer] = [0, 4, 0, 4, 0, 0, 4, 0, 0, 4];
+    var wantRoam: List[Integer] = [1, 0, 2, 0, 2, 2, 1, 2, 2, 2];
+    for level in 0..10 {
+        require(rooms.sentries(level) == wantSentry.get(level), "sentry count per level");
+        require(rooms.roamers(level) == wantRoam.get(level), "roaming cat count per level");
+        var wantKind = 1; if level >= 6 { wantKind = 2; }
+        require(rooms.roamerKind(level) == wantKind, "roamers turn prowler from level seven");
+    }
+    // The four rooms carrying sentries are the crowded ones; every seed must still fit the roster.
+    var crowded: List[Integer] = [1, 3, 6, 9];
+    for slot in 0..crowded.length() {
+        var level = crowded.get(slot);
+        for sample in 1..16 {
+            var board = new rules.Board(); board.seed = sample * 37 + 11; board.difficulty = sample % 3;
+            rooms.load(board, level);
+            var sent = 0; var roam = 0;
+            for i in 0..board.cats.length() {
+                var cat = board.cats.get(i);
+                if cat.kind == 0 { sent = sent + 1; }
+                else { roam = roam + 1; require(cat.kind == rooms.roamerKind(level), "roamer kind on every seed"); }
+                for j in 0..i {
+                    var other = board.cats.get(j);
+                    require(rules.abs(other.x - cat.x) + rules.abs(other.y - cat.y) >= 3, "cats spawn three apart");
+                }
+            }
+            require(sent == rooms.sentries(level) && roam == rooms.roamers(level), "every seed places the full roster");
+        }
+    }
+
+    g = fresh();
+    require(g.cadence(2) == g.cadence(1) - 2, "prowlers run two ticks quicker than stalkers");
+    g.difficulty = 0; require(g.cadence(1) == 11 && g.cadence(2) == 9, "cozy cadences");
+    g.difficulty = 2; require(g.cadence(1) == 8 && g.cadence(2) == 6, "fierce cadences");
+
     for room in 0..10 {
         g = new rules.Board(); g.seed = 7 + room; g.lives = 5; rooms.load(g, room);
         require(g.cheese.length() == 12 && g.collected == 0, "twelve cheese per room");
         require(g.bonus >= 0 && g.cheeseAt(g.bonus % rules.W, g.bonus / rules.W) < 0, "one bonus per room");
         require(!g.exposed(g.mx, g.my) && g.tile(g.mx, g.my) == 0 && g.grace == rules.GRACE, "safe room entrance with grace");
-        require(!g.exitShown && (room == 0 || g.liveCats() > 0) && g.mustClear == (room >= 1), "exit hidden at room start; rooms 2+ need every roamer boxed");
+        require(!g.exitShown && g.liveCats() == rooms.roamers(room) && g.mustClear == (rooms.roamers(room) > 0), "exit hidden at room start; the HUD promises boxing only where roamers live");
         for x in 0..rules.W { require(g.tile(x, 0) == 1 && g.tile(x, rules.H - 1) == 1, "horizontal boundary"); }
         for y in 0..rules.H { require(g.tile(0, y) == 1 && g.tile(rules.W - 1, y) == 1, "vertical boundary"); }
         for y in 1..rules.H - 1 { for x in 1..rules.W - 1 { require(g.tile(x, y) != 1, "no interior walls"); } }
+        var sentryCount = 0; var roamCount = 0;
         for i in 0..g.cats.length() {
             c = g.cats.get(i);
             require(g.tile(c.x, c.y) == 0, "cats on floor");
-            if room == 0 { require(c.kind == 0, "room one has only sentries"); }
+            if c.kind == 0 { sentryCount = sentryCount + 1; }
+            else { roamCount = roamCount + 1; require(c.kind == rooms.roamerKind(room), "roamers match the level kind"); }
         }
+        require(sentryCount == rooms.sentries(room) && roamCount == rooms.roamers(room), "built room matches the campaign roster");
         for i in 0..g.cheese.length() {
             var pos = g.cheese.get(i); var x = pos % rules.W; var y = pos / rules.W;
             require(g.tile(x, y) == 0 && g.catAt(x, y) < 0 && pos != g.bonus, "eligible cheese");

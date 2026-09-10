@@ -48,9 +48,10 @@ the game from turn-based to real time and settled the following rules:
   locks movement, and walks the killer one square every `CHASE` (3) ticks until
   it is adjacent (or blocked by a cat/crate), then `lose()` fires and the killer
   returns to where it spotted the mouse.
-- Roaming: stalkers step every 9 ticks and prowlers every 5 on Classic (11/8 Cozy,
-  8/4 Fierce) to a random legal neighbour, avoiding an immediate reversal when
-  another option exists. Every 14..24 steps a roamer drops a crate on the square it
+- Roaming: stalkers step every 9 ticks on Classic (11 Cozy, 8 Fierce) to a random
+  legal neighbour, avoiding an immediate reversal when another option exists.
+  Prowlers are the same creature two ticks quicker: 7 Classic, 9 Cozy, 6 Fierce.
+  `cadence()` derives the prowler from the stalker so the gap cannot drift. Every 14..24 steps a roamer drops a crate on the square it
   just vacated unless that square holds cheese, the bonus, the exit or the mouse,
   or the drop would leave any adjacent item or the mouse with no free neighbour.
 - Boxed roamers (four solid sides): captured (+250) once twelve cheese are
@@ -59,6 +60,25 @@ the game from turn-based to real time and settled the following rules:
   due moves also respawns. Sentries are never boxed, captured or required for
   the exit; `liveCats()` counts roamers only, and every room's exit requires
   twelve cheese plus zero surviving roamers (`mustClear` is now HUD-only).
+- Campaign roster: `rooms.sentries(n)`, `rooms.roamers(n)` and `rooms.roamerKind(n)`
+  state each room's cat mix in one place, and `rooms.load` spawns straight from
+  them. Sentries first, so the tightest placements are taken while the board is
+  emptiest. Rooms 2 and 4 (n = 1, 3) hold four sentries and no roamer, so their
+  exit needs only the twelve cheese; rooms 7 and 10 hold four sentries plus one
+  and two roamers. Roamers are stalkers below room 7 and prowlers from room 7 on,
+  which is how "cats get quicker at level 7" is expressed: a kind change, not a
+  per-level speed term.
+
+  | Room | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Sentries | 0 | 4 | 0 | 4 | 0 | 0 | 4 | 0 | 0 | 4 |
+  | Roamers | 1 | 0 | 2 | 0 | 2 | 2 | 1 | 2 | 2 | 2 |
+
+- Spawn placement takes a covered cell at least three squares (Manhattan) from
+  every cat already placed. `rooms.spots()` relaxes that gap to two, then to
+  zero, and `rooms.cat()` declines to place rather than index an empty list. The
+  relaxations are insurance: over 4,000 generated rooms across every room and
+  difficulty, the three-square rung always succeeded.
 - Cheese scatters once per room and never moves. One star bonus per room hops to
   a random eligible cell every `interval` seconds (the old scatter table) until
   collected; it is worth `BONUS_POINTS` (300).
@@ -68,7 +88,8 @@ the game from turn-based to real time and settled the following rules:
 - Quick restart (Backspace / T / LB) costs one life and reloads the current room
   with its original seeded setup; on the last life it ends the run instead.
 - Crates and enemy positions are randomized once per new level. The protected
-  entrance, crate-count curve and enemy kinds retain v1.1.4 balance. Initial
+  entrance and crate-count curve retain v1.1.4 balance; the cat mix is the
+  roster below. Initial
   floor connectivity is checked as crates are placed. Restart replays the stored
   level seed; deaths preserve the current board and enemy positions.
 - Seeded integer randomness makes a run reproducible. New campaigns get a fresh
@@ -136,6 +157,13 @@ write failure: `Could not save profile. Changes remain in this session.`
 - Given the mouse enters a hunting lane, then the state becomes CAUGHT, movement
   is refused, the killer walks one square per CHASE ticks, death follows on
   arrival, and the killer returns to its spotting square.
+- Given any room, when it is generated on any seed and difficulty, then it holds
+  exactly `rooms.sentries(n)` sentries and `rooms.roamers(n)` roamers, every
+  roamer is `rooms.roamerKind(n)`, and no two cats sit within three squares.
+- Given a room with no roamer, then `mustClear` is false and the exit opens on the
+  twelfth cheese alone; given any roamer, all of them must be boxed in first.
+- Given any difficulty, then a prowler's cadence is exactly two ticks below a
+  stalker's, so rooms 7 to 10 move quicker than rooms 1 to 6.
 - Given a stalker, when its cadence elapses, then it moves to a legal neighbour,
   records its previous cell, and drops a crate on the vacated cell after its
   move counter reaches zero; drops never cover cheese nor seal a cheese cell.

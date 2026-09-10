@@ -46,7 +46,7 @@ func start() {
     require(p.count(2) == 1 && p.entry(2, 0).points == 29300 && !s.active, "score and exactly-once record");
     require(s.command("enter") && s.mode == session.SCORES && s.scoreTab == 2, "ending opens own difficulty scores");
     require(s.command("escape") && s.mode == session.TITLE && s.command("enter"), "new campaign from title");
-    require(s.game.lives == 7 && s.game.interval == 14 && s.game.cadence(1) == 11 && s.game.cadence(2) == 8, "cozy rules");
+    require(s.game.lives == 7 && s.game.interval == 14 && s.game.cadence(1) == 11 && s.game.cadence(2) == 9, "cozy rules");
     require(!s.tick() || s.mode == session.GAME, "tick only advances the live board");
     s.game.grace = 0; s.game.cats.get(0).searching = true; s.game.mx = s.game.cats.get(0).x; s.game.my = 2;
     s.game.setTile(s.game.mx, 2, 0);

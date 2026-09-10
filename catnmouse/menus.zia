@@ -62,7 +62,7 @@ class Menus {
         v = screen; p = v.pixels; controller = false;
         cat = v.bank.sprites.get(5).Scale(256, 256);
         mouse = v.bank.sprites.get(4).Scale(192, 192);
-        crate = v.bank.sprites.get(2).Scale(128, 128);
+        crate = v.bank.crateLarge;
         cheese = v.bank.sprites.get(3).Scale(128, 128);
     }
     hide func text(x: Integer, y: Integer, s: String, color: Integer) { p.DrawText(x, y, s, color); }
@@ -176,9 +176,9 @@ class Menus {
         }
         p.DrawBox(832, 210, 440, 484, 0x142E32);
         self.big(856, 238, profile.difficultyName(s.prefs.difficulty), 3, art.GOLD);
-        var lives = "5 LIVES"; var hops = "10 / 8 / 6 SECONDS"; var cats = "STALKER 0.9S / PROWLER 0.5S";
-        if s.prefs.difficulty == 0 { lives = "7 LIVES"; hops = "14 / 12 / 10 SECONDS"; cats = "STALKER 1.1S / PROWLER 0.8S"; }
-        if s.prefs.difficulty == 2 { lives = "3 LIVES"; hops = "8 / 6 / 4 SECONDS"; cats = "STALKER 0.8S / PROWLER 0.4S"; }
+        var lives = "5 LIVES"; var hops = "10 / 8 / 6 SECONDS"; var cats = "STALKER 0.9S / PROWLER 0.7S";
+        if s.prefs.difficulty == 0 { lives = "7 LIVES"; hops = "14 / 12 / 10 SECONDS"; cats = "STALKER 1.1S / PROWLER 0.9S"; }
+        if s.prefs.difficulty == 2 { lives = "3 LIVES"; hops = "8 / 6 / 4 SECONDS"; cats = "STALKER 0.8S / PROWLER 0.6S"; }
         self.big(856, 289, lives, 2, art.PAPER);
         self.text(856, 337, "BONUS HOPS / EARLY TO LATE ROOMS", art.MUTED);
         self.big(856, 361, hops, 2, art.PAPER);

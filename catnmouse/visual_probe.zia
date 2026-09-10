@@ -60,7 +60,9 @@ func start() {
     rooms.load(g, 0);
     for mode in 3..6 { v.draw(g, mode, true, false); save(v, "screen-" + Fmt.Int(mode)); }
     v.draw(g, 9, true, false); save(v, "restart");
-    g.grace = 0; g.cats.get(0).searching = true; v.draw(g, 0, true, false); save(v, "searching");
+    rooms.load(g, 1); g.grace = 0;
+    for i in 0..g.cats.length() { g.cats.get(i).searching = true; }
+    v.draw(g, 0, true, false); save(v, "searching");
     g.collected = 12; g.cheese.clear(); g.revealExit(); v.draw(g, 0, true, false); save(v, "exit-shown");
     g.state = rules.CAUGHT; g.killer = 0; v.draw(g, 0, true, false); save(v, "caught");
     g.state = rules.PLAY; g.killer = -1;

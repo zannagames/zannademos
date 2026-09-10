@@ -31,7 +31,7 @@ if [ ! -x "$zanna_bin" ]; then
 fi
 mkdir -p "$output_dir"
 output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
-stem=Cat-n-Mouse-1.1.5-macos-arm64
+stem=Cat-n-Mouse-1.1.6-macos-arm64
 for suffix in .dmg .dmg.sha256 .dmg.manifest.json .dmg.zip .dmg.zip.sha256; do
     if [ -e "$output_dir/$stem$suffix" ]; then
         printf 'error: refusing to replace %s\n' "$output_dir/$stem$suffix" >&2

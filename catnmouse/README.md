@@ -3,8 +3,8 @@
 A complete ten-room real-time cheese heist, written in Zia using Zanna's 2D
 runtime. You are the mouse. Collect twelve cheese pieces in each room, keep
 crates between yourself and the roaming cats, grab the star bonus, and reach the
-exit once it appears. From room 2 on, you must also box in every roaming cat
-before the exit will appear.
+exit once it appears. Wherever a roaming cat lives, you must also box every one
+of them in before the exit will appear.
 
 The board is **20 × 11 cells**, including the enclosing walls, with **64 × 64
 pixels per cell**. The entire 1280 × 704 board stays visible in a 1344 × 872
@@ -13,7 +13,8 @@ window, with status above and controls below.
 The presentation is pixel art throughout: crisp sprites, bitmap lettering,
 stepped shapes, animated pixel details and nearest-neighbor scaling. The tiles,
 the UI, the original looping chiptune and every sound effect are generated in
-code; the mouse and the three cats ship as 64 x 64 PNG portraits in `assets/`.
+code; the mouse and the three cats ship as 64 x 64 PNG portraits in `assets/`,
+and the two crates ship as 128 x 128 wood tiles baked from a photograph.
 Any sprite, shipped or generated, can be replaced by dropping a PNG in without
 changing game code. No downloads or external libraries are required.
 
@@ -50,7 +51,7 @@ in `zannademos/demo_tests.tsv` and run through the usual demo test runner.
 ## macOS installer
 
 The Apple silicon package (macOS 14+) is written to
-`../../zannagames/Cat-n-Mouse-1.1.5-macos-arm64.dmg.zip`, alongside the DMG,
+`../../zannagames/Cat-n-Mouse-1.1.6-macos-arm64.dmg.zip`, alongside the DMG,
 checksums and artifact manifest. Unzip, open the DMG, drag the game to
 Applications, then eject the image. No Zanna installation is needed to play.
 
@@ -106,6 +107,29 @@ moves do nothing. A "GET READY" banner marks the 1.5 second grace period at the 
 every room, after every respawn and after a restart: no cat moves or hunts, and
 no cat can see the entrance when a room begins.
 
+## The ten rooms
+
+Each room's cat mix is fixed; only their positions and the crates are random.
+Black sentries hold still and hunt only while they glow. Roaming cats wander and
+must all be boxed in before the exit appears. Roamers are tan stalkers through
+room 6 and quicker violet prowlers from room 7 on.
+
+| Room | Name | Sentries | Roaming cats |
+| --- | --- | --- | --- |
+| 1 | The Pantry | – | 1 stalker |
+| 2 | Scullery | 4 | – |
+| 3 | Breakfast Nook | – | 2 stalkers |
+| 4 | The Box Room | 4 | – |
+| 5 | Long Gallery | – | 2 stalkers |
+| 6 | The Library | – | 2 stalkers |
+| 7 | Laundry Day | 4 | 1 prowler |
+| 8 | Attic Crossing | – | 2 prowlers |
+| 9 | The Catwalk | – | 2 prowlers |
+| 10 | Midnight Feast | 4 | 2 prowlers |
+
+Crate counts fall from eighteen to fourteen across the campaign, so later rooms
+offer less cover.
+
 Cats see in all four cardinal directions, however far away you are. A crate or
 the outer wall stops a sightline. Cheese, the bonus and other cats do not.
 Entering a hunting cat's lane, or having one wander into yours, starts the catch:
@@ -114,8 +138,9 @@ lose a life. The cat returns to where it spotted you.
 
 Black sentries never move and cannot be removed. They only hunt while they glow;
 between searches they are harmless, on a random timer of 2 to 5 seconds idle and
-1.5 to 3 seconds searching. Tan stalkers and violet prowlers wander at random,
-avoiding immediate reversals, and cannot push crates. Every 14 to 24 steps a
+1.5 to 3 seconds searching. Tan stalkers wander at random, avoiding immediate
+reversals, and cannot push crates. From room 7 on the wanderers are violet
+prowlers, which behave identically but step two ticks quicker. Every 14 to 24 steps a
 wanderer drops a fresh pale crate on the square it just left. Drops never land on
 cheese, the bonus, the exit or you, and never seal any of those in completely.
 A gold corner badge means a cat is standing on cheese.
@@ -131,8 +156,8 @@ Cheese spawns at random places when a room begins and never moves. One star
 bonus per room is worth 300 points; it hops to a new random square on a visible
 countdown (10 seconds in rooms 1–3, 8 in 4–7, 6 in 8–10 on Classic) until you
 take it. The exit stays hidden until the room's objective is met: twelve cheese
-and every roaming cat boxed in (room 1 has sentries only, which never count);
-it then appears on a floor square you can walk to.
+and every roaming cat boxed in (sentries never count, so rooms 2 and 4 need only
+the cheese); it then appears on a floor square you can walk to.
 
 On Classic, you have five lives for the entire campaign. Deaths preserve moved
 crates, surviving cats, collected cheese and the turn counter. Enter drops you
@@ -152,9 +177,9 @@ main menu, where you can begin a new campaign.
 
 | Difficulty | Campaign lives | Stalker / prowler seconds per step | Bonus hop: rooms 1–3 / 4–7 / 8–10 |
 | --- | --- | --- | --- |
-| Cozy | 7 | 1.1 / 0.8 | 14 / 12 / 10 seconds |
-| Classic (default) | 5 | 0.9 / 0.5 | 10 / 8 / 6 seconds |
-| Fierce | 3 | 0.8 / 0.4 | 8 / 6 / 4 seconds |
+| Cozy | 7 | 1.1 / 0.9 | 14 / 12 / 10 seconds |
+| Classic (default) | 5 | 0.9 / 0.7 | 10 / 8 / 6 seconds |
+| Fierce | 3 | 0.8 / 0.6 | 8 / 6 / 4 seconds |
 
 Difficulty changes apply to the next heist; the current run keeps its original
 rules. Music, sound effects, lane assistance and reduced motion change immediately.
@@ -181,12 +206,20 @@ empty; the visual probe uses explicitly isolated sample records for screenshots.
 The four characters ship as 64 x 64 PNGs in `assets/`: `mouse.png`, the black
 `cat_sentry.png`, the tan `cat_stalker.png`, and `cat_prowler.png`, which
 `tools/make_skins.zia` derives from the stalker by rotating its fur to violet
-while keeping lightness, alpha and the blue eyes. Every other sprite is drawn in
-code by `art.zia`, which also stands in for any character PNG that is missing.
+while keeping lightness, alpha and the blue eyes.
 
-See [assets/README.md](assets/README.md) for the twelve PNG names, transparency,
-dimensions and search order. Set `CATNMOUSE_ASSETS` to use a separate skin
-directory. Missing or unreadable sprites use the generated defaults.
+The pushable crate and the pale crate a cat drops ship as 128 x 128 tiles,
+`crate.png` and `crate_new.png`, baked by `tools/make_crate.zia` from the
+high-resolution photograph in `art/`. That source stays outside `assets/`
+because the packager copies `assets/` wholesale into the app bundle. Every other
+sprite is drawn in code by `art.zia`, which also stands in for any shipped PNG
+that is missing.
+
+An override may be authored at any size: `art.zia` area-averages it down to the
+64 px tile with `Pixels.Resize`, so photographic artwork reduces cleanly rather
+than aliasing. See [assets/README.md](assets/README.md) for the twelve PNG names,
+transparency, dimensions and search order. Set `CATNMOUSE_ASSETS` to use a
+separate skin directory. Missing or unreadable sprites use the generated defaults.
 
 Rules live in `rules.zia`; random crate and enemy placement, titles, enemy mixes and
 bonus intervals are in `rooms.zia`. Rendering is in `view.zia`; artwork is in
@@ -227,9 +260,11 @@ writes the player's profile.
 
 Set `CATNMOUSE_PREVIEW` to an existing output directory when running
 `visual_probe.zia` to export all rooms, title, help, dialogs, map and endings.
-For `skin_probe.zia`, set `CATNMOUSE_ASSETS` to a new empty scratch directory;
-the probe creates one tiny PNG and one deliberately corrupt fixture there,
-verifies resize/alpha/fallback, and leaves those fixtures for inspection.
+`skin_probe.zia` runs from the manifest with no setup: it owns a scratch
+directory under the system temporary directory and removes it again. It writes a
+tiny PNG, a deliberately corrupt fixture and an oversized checkerboard, then
+verifies resize filtering, alpha and fallback. Set `CATNMOUSE_ASSETS` to a new
+empty directory to run it there instead and keep the fixtures for inspection.
 
 For `profile_probe.zia`, set `CATNMOUSE_PROFILE_TEST_KEY` to a new key starting
 with `catnmouse-test-`. The probe refuses an existing save, verifies atomic
@@ -248,7 +283,7 @@ recording, controller bindings, analog hysteresis, and persistent settings.
 
 Verified on macOS: native build with `-Wall -Werror`, native window/audio smoke,
 all six registered demo checks, PNG replacement/alpha/fallback, profile persistence
-and corruption recovery, and matching VM/native campaign trace `158328625`.
+and corruption recovery, and matching VM/native campaign trace `1224247891`.
 The repository's 2,024-test run completed; its twelve sandbox-related failures
 passed when rerun with the required filesystem/network/window access. Runtime
 surface audit, platform policy lint and cross-platform smoke scripts also passed.

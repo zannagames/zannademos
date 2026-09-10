@@ -1,0 +1,144 @@
+//===----------------------------------------------------------------------===//
+//
+// Part of the Zanna project, under the GNU GPL v3.
+// See LICENSE for license information.
+//
+//===----------------------------------------------------------------------===//
+//
+// File: zannademos/catnmouse/tools/make_crate.zia
+// Purpose: Bake the shipped crate tiles from the high-resolution crate artwork.
+// Key invariants:
+//   - Output is written only to the project's own assets directory.
+//   - Both tiles share one silhouette: a TILE-square canvas carrying the same
+//     translucent drop shadow the procedural crate draws, with the artwork
+//     inset by MARGIN, so a skinned board keeps its grid and its grounding.
+//   - The pale tile is the brown tile mixed toward cream, so the pushed crate
+//     and the cat-dropped crate stay one object in two states.
+//   - The transform is pure and deterministic: rerunning reproduces both files.
+// Ownership/Lifetime:
+//   - This offline tool owns its temporary pixel surfaces and render target.
+// Links: ../assets/README.md, ../art.zia, make_skins.zia
+//
+//===----------------------------------------------------------------------===//
+module make_crate;
+
+bind Zanna.Graphics;
+bind Zanna.Terminal as Terminal;
+bind Zanna.System.Environment as Env;
+
+/// The source photograph lives outside `assets`, which `zanna.project` copies
+/// wholesale into the app bundle; only the baked tiles below are shipped.
+final SOURCE = "art/crate_source.png";
+final TARGET = "assets/crate.png";
+final TARGET_NEW = "assets/crate_new.png";
+
+/// Tiles are authored at twice the 64px board tile so the pantry menu can draw
+/// them at 128 without an upscale; art.zia area-downscales 2:1 for the board.
+final TILE = 128;
+final MARGIN = 8;
+final BODY = TILE - MARGIN * 2;
+
+/// Drop shadow: art.zia's DrawBox(9, 10, 52, 52, rgba(8, 20, 22, 95)) doubled.
+final SHADOW_X = 18;
+final SHADOW_Y = 20;
+final SHADOW_W = 104;
+final SHADOW_H = 104;
+
+/// A source texel counts as artwork above this alpha when finding the crop box.
+final EDGE_ALPHA = 8;
+/// Near-opaque source texels are snapped opaque; the export leaves them at 253.
+final OPAQUE_FLOOR = 250;
+
+/// Cream the pale crate is mixed toward, and the mix weight. Both come from the
+/// procedural palette shift in art.zia: face 0xC18A52 becomes 0xE3C48E, which is
+/// about two thirds of the way to 0xF3DFAE on every channel.
+final CREAM_R = 243;
+final CREAM_G = 223;
+final CREAM_B = 174;
+final PALE_MIX = 0.62;
+
+/// @brief Mix one channel toward its cream counterpart.
+/// @param v Source channel 0..255.
+/// @param target Cream channel 0..255.
+/// @return The blended byte; `as Integer` rounds, so the result is clamped.
+func toward(v: Integer, target: Integer) -> Integer {
+    var mixed = v as Float + (target - v) as Float * PALE_MIX;
+    if mixed < 0.0 { mixed = 0.0; }
+    if mixed > 255.0 { mixed = 255.0; }
+    return mixed as Integer;
+}
+
+/// @brief Crop a source image to the bounding box of its visible texels.
+/// @param source Borrowed source image.
+/// @return A new image holding just the artwork, or null when nothing is visible.
+func trim(source: Pixels) -> Pixels {
+    var minX = source.Width; var minY = source.Height;
+    var maxX = -1; var maxY = -1;
+    for y in 0..source.Height {
+        for x in 0..source.Width {
+            if source.GetRgba(x, y) % 256 <= EDGE_ALPHA { continue; }
+            if x < minX { minX = x; }
+            if x > maxX { maxX = x; }
+            if y < minY { minY = y; }
+            if y > maxY { maxY = y; }
+        }
+    }
+    if maxX < minX || maxY < minY { return null; }
+    var cropped = Pixels.New(maxX - minX + 1, maxY - minY + 1);
+    cropped.Copy(0, 0, source, minX, minY, cropped.Width, cropped.Height);
+    return cropped;
+}
+
+/// @brief Compose one finished tile: drop shadow, then the inset crate body.
+/// @param body Borrowed BODY-square artwork.
+/// @return A TILE-square image with the body composed over the shadow.
+func compose(body: Pixels) -> Pixels {
+    var tile = RenderTarget2D.New(TILE, TILE);
+    var surface = tile.Pixels as Pixels;
+    surface.DrawBox(SHADOW_X, SHADOW_Y, SHADOW_W, SHADOW_H, Color.Rgba(8, 20, 22, 95));
+    tile.DrawPixels(MARGIN, MARGIN, body);
+    return surface;
+}
+
+func start() {
+    var source = Pixels.LoadPng(SOURCE);
+    if source == null {
+        Terminal.Say("make_crate: cannot read " + SOURCE + " (run from the catnmouse directory)");
+        Env.Exit(1);
+        return;
+    }
+    var cropped = trim(source);
+    if cropped == null {
+        Terminal.Say("make_crate: " + SOURCE + " is fully transparent");
+        Env.Exit(1);
+        return;
+    }
+    // Resize area-filters any axis shrinking by more than 2:1, so the plank
+    // seams and nail heads survive the reduction that Scale would alias away.
+    var body = cropped.Resize(BODY, BODY);
+    var pale = Pixels.New(BODY, BODY);
+    for y in 0..BODY {
+        for x in 0..BODY {
+            var rgba = body.GetRgba(x, y);
+            var a = rgba % 256;
+            if a == 0 { continue; }
+            if a >= OPAQUE_FLOOR { a = 255; body.SetRgba(x, y, rgba - rgba % 256 + 255); }
+            var r = (rgba / 16777216) % 256;
+            var g = (rgba / 65536) % 256;
+            var b = (rgba / 256) % 256;
+            pale.SetRgba(x, y, toward(r, CREAM_R) * 16777216 + toward(g, CREAM_G) * 65536
+                             + toward(b, CREAM_B) * 256 + a);
+        }
+    }
+    if compose(body).SavePng(TARGET) != 1 {
+        Terminal.Say("make_crate: cannot write " + TARGET);
+        Env.Exit(1);
+        return;
+    }
+    if compose(pale).SavePng(TARGET_NEW) != 1 {
+        Terminal.Say("make_crate: cannot write " + TARGET_NEW);
+        Env.Exit(1);
+        return;
+    }
+    Terminal.Say("make_crate: wrote " + TARGET + " and " + TARGET_NEW);
+}

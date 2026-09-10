@@ -6,6 +6,8 @@
 // Purpose: Generate and cache the complete tile artwork with optional PNG skins.
 // Key invariants:
 //   - All sprites are 64px RGBA buffers authored at tile resolution, built at startup.
+//   - Oversized PNG overrides are area-filtered down, never point-sampled.
+//   - crateLarge is the same crate at 2x for the pantry shelves, and is never null.
 //   - Missing or unreadable overrides retain the procedural fallback.
 //   - Derived buffers (halos, lane tint, dimmer) are never overridable and never rebuilt per frame.
 // Ownership/Lifetime:
@@ -209,21 +211,29 @@ class Art {
     expose Pixels dim;
     expose Pixels heroMouse;
     expose Pixels heroCat;
+    expose Pixels crateLarge;
     expose Integer overrides;
 
     expose func init() {
         sprites = []; floors = []; overrides = 0;
+        crateLarge = null;
         for id in 0..COUNT {
             var sprite = generate(id);
             var path = self.resolve(filename(id));
             if path != "" {
                 var loaded = Pixels.LoadPng(path);
                 if loaded != null {
-                    sprite = loaded.Scale(SIZE, SIZE); overrides = overrides + 1;
+                    // Resize area-filters a heavy reduction; Scale would point-sample
+                    // an oversized skin down to noise.
+                    sprite = loaded.Resize(SIZE, SIZE); overrides = overrides + 1;
+                    // The pantry shelves draw crates at 2x, so keep the skin's own
+                    // detail at that size instead of enlarging the board tile.
+                    if id == 2 { crateLarge = loaded.Resize(SIZE * 2, SIZE * 2); }
                 } else { Terminal.Say("Ignoring unreadable PNG: " + path); }
             }
             sprites.add(sprite);
         }
+        if crateLarge == null { crateLarge = sprites.get(2).Scale(SIZE * 2, SIZE * 2); }
         for i in 0..8 { floors.add(floor(i % 2 == 1, i)); }
         mouseLeft = sprites.get(4).FlipH();
         goldHalo = halo(GOLD); redHalo = halo(RED);

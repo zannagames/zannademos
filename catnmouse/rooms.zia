@@ -28,16 +28,35 @@ expose func name(n: Integer) -> String {
 }
 
 expose func hint(n: Integer) -> String {
-    if n == 0 { return "Sentries glow when they search. Stay out of their lanes."; }
-    if n == 1 { return "Box in the tan stalker after the cheese to open the exit."; }
-    if n == 2 { return "Grab the star bonus before it hops elsewhere."; }
-    if n == 3 { return "Two tan cats now. Box them both in after the cheese."; }
-    if n == 4 { return "Purple prowlers wander faster. Keep cover close."; }
+    if n == 0 { return "One tan stalker. Box it in once the cheese is gone."; }
+    if n == 1 { return "Four sentries, and not one of them moves. Mind the glow."; }
+    if n == 2 { return "Two stalkers now. Box them both in after the cheese."; }
+    if n == 3 { return "Four sentries again. Push crates to cut their lanes."; }
+    if n == 4 { return "Two stalkers and thinner cover. Plan your boxes early."; }
     if n == 5 { return "A safe passage now may become a firing lane."; }
-    if n == 6 { return "Every roaming cat must go. Sentries can stay."; }
-    if n == 7 { return "The exit only appears once the cheese is done."; }
+    if n == 6 { return "Violet prowlers are quicker, and four sentries watch."; }
+    if n == 7 { return "Two prowlers, no sentries. Speed is the whole threat."; }
     if n == 8 { return "Fewer crates. Every push leaves a lasting mark."; }
-    return "Twelve cheese. Four cats. One last way out.";
+    return "Four sentries, two prowlers, twelve cheese. One way out.";
+}
+
+/// @brief Stationary sentries (kind 0) in room n; the campaign roster lives here.
+expose func sentries(n: Integer) -> Integer {
+    if n == 1 || n == 3 || n == 6 || n == 9 { return 4; }
+    return 0;
+}
+
+/// @brief Roaming cats in room n; every roamer in a room shares one kind.
+expose func roamers(n: Integer) -> Integer {
+    if n == 1 || n == 3 { return 0; }
+    if n == 0 || n == 6 { return 1; }
+    return 2;
+}
+
+/// @brief Roamers become the quicker violet prowler from room 6 (level 7) on.
+expose func roamerKind(n: Integer) -> Integer {
+    if n >= 6 { return 2; }
+    return 1;
 }
 
 /// @brief Floor connectivity keeps initial cheese and bonus positions reachable.
@@ -61,18 +80,28 @@ expose func connected(g: rules.Board) -> Boolean {
     return true;
 }
 
-func cat(g: rules.Board, kind: Integer) {
+/// @brief Covered spawn cells at least `gap` apart from every cat already placed.
+func spots(g: rules.Board, gap: Integer) -> List[Integer] {
     var cells: List[Integer] = [];
     for y in 2..rules.H - 1 { for x in 2..rules.W - 1 {
         if g.tile(x, y) == 0 && g.catAt(x, y) < 0 && !g.clear(x, y, g.mx, g.my) {
             var spaced = true;
             for i in 0..g.cats.length() {
                 var c = g.cats.get(i);
-                if rules.abs(c.x - x) + rules.abs(c.y - y) < 3 { spaced = false; }
+                if rules.abs(c.x - x) + rules.abs(c.y - y) < gap { spaced = false; }
             }
             if spaced { cells.add(y * rules.W + x); }
         }
     } }
+    return cells;
+}
+
+/// @brief Place one cat, relaxing the spacing rule only when the board leaves no room.
+func cat(g: rules.Board, kind: Integer) {
+    var cells = spots(g, 3);
+    if cells.length() == 0 { cells = spots(g, 2); }
+    if cells.length() == 0 { cells = spots(g, 0); }
+    if cells.length() == 0 { return; }
     var pos = cells.get(g.random(cells.length()));
     g.addCat(pos % rules.W, pos / rules.W, kind);
 }
@@ -101,22 +130,14 @@ expose func load(g: rules.Board, n: Integer) {
         if connected(g) { placed = placed + 1; }
         else { g.setTile(pos % rules.W, pos / rules.W, 0); }
     }
-    g.mustClear = n >= 1;
+    g.mustClear = roamers(n) > 0;
     g.interval = 10;
     if n >= 3 { g.interval = 8; } if n >= 7 { g.interval = 6; }
     if g.difficulty == 0 { g.interval = g.interval + 4; }
     if g.difficulty == 2 { g.interval = g.interval - 2; }
-    var kind = 0;
-    if n >= 1 { kind = 1; } if n >= 7 { kind = 2; }
-    cat(g, kind);
-    var second = 0;
-    if n >= 3 { second = 1; }
-    cat(g, second);
-    if n >= 2 {
-        var third = 1; if n >= 4 { third = 2; }
-        cat(g, third);
-    }
-    if n >= 6 { cat(g, 1); }
+    // Sentries first: they take the tightest placements while the board is emptiest.
+    for _ in 0..sentries(n) { cat(g, 0); }
+    for _ in 0..roamers(n) { cat(g, roamerKind(n)); }
 
     g.scatter(); g.placeBonus(); g.event = 0; g.message = hint(n);
 }

@@ -76,11 +76,15 @@ class View {
         pixels.DrawBox(408, 14, 4, 62, 0x2E4A4D);
         self.text(432, 20, "ROOM " + Fmt.Int(number) + " OF 10", art.MUTED);
         self.big(432, 38, rooms.name(number - 1), 2, art.PAPER);
+        // The panel is 38 characters wide before the cheese divider at x=736.
         var contract = "12 CHEESE";
-        if g.mustClear { contract = "12 CHEESE + BOX IN ALL ROAMING CATS"; }
+        if g.mustClear { contract = "12 CHEESE + ALL ROAMERS"; }
         if g.exitShown { contract = "EXIT OPEN - FIND THE ARCH"; }
-        else if g.collected == 12 { contract = "BOX IN THE LAST " + Fmt.Int(g.liveCats()) + " CATS TO OPEN THE EXIT"; }
-        else { contract = contract + "  /  EXIT HIDDEN"; }
+        else if g.collected == 12 {
+            var word = " ROAMERS"; if g.liveCats() == 1 { word = " ROAMER"; }
+            contract = "BOX THE LAST " + Fmt.Int(g.liveCats()) + word + " FOR THE EXIT";
+        }
+        else { contract = contract + " / EXIT HIDDEN"; }
         self.text(432, 68, contract, art.GOLD);
         pixels.DrawBox(736, 14, 4, 62, 0x2E4A4D);
         self.text(760, 20, "CHEESE", art.MUTED);
@@ -285,7 +289,7 @@ class View {
             self.big(x + 15, y + 22, Fmt.Int(n + 1), 3, ink);
             if n < g.room { self.text(x + 66, y + 31, "CLEAR", ink); }
             if n == g.room { self.text(x + 66, y + 31, "NEXT", ink); }
-            var mini = 5; if n >= 1 { mini = 6; } if n >= 7 { mini = 7; }
+            var mini = 5; if rooms.roamers(n) > 0 { mini = 5 + rooms.roamerKind(n); }
             target.DrawPixels(x + 132, y + 6, bank.sprites.get(mini));
             self.text(x, y + 82, rooms.name(n), art.PAPER);
         }

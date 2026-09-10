@@ -26,6 +26,7 @@ catnmouse	run-probe	campaign_probe.zia	fast	120	-
 catnmouse	run-probe	visual_probe.zia	fast	120	-
 catnmouse	run-probe	session_probe.zia	fast	120	-
 catnmouse	run-probe	controls_probe.zia	fast	120	-
+catnmouse	run-probe	skin_probe.zia	fast	120	-
 # sqldb-basic predates newer BASIC type checking: `zanna check` reports 42
 # B2001 errors (operand/array-element type mismatches). Quarantined until the
 # dialect port lands; imported verbatim from the zanna repo.
